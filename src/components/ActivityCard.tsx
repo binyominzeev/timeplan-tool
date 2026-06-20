@@ -8,9 +8,17 @@ interface Props {
   inSlot?: boolean;
   slotEntryId?: string;
   onRemove?: (entryId: string) => void;
+  timeRangeLabel?: string;
 }
 
-export function ActivityCard({ activity, schedule, inSlot = false, slotEntryId, onRemove }: Props) {
+export function ActivityCard({
+  activity,
+  schedule,
+  inSlot = false,
+  slotEntryId,
+  onRemove,
+  timeRangeLabel,
+}: Props) {
   const draggableId = inSlot && slotEntryId ? `slot:${slotEntryId}` : `activity:${activity.id}`;
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -58,6 +66,9 @@ export function ActivityCard({ activity, schedule, inSlot = false, slotEntryId, 
       </p>
 
       <div className="flex items-center gap-2 mt-1 text-gray-500">
+        {inSlot && timeRangeLabel && (
+          <span className="whitespace-nowrap font-medium text-blue-600">{timeRangeLabel}</span>
+        )}
         {activity.dailyMinutes != null && (
           <span className="whitespace-nowrap">{activity.dailyMinutes} min</span>
         )}

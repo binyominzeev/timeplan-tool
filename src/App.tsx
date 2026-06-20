@@ -12,6 +12,7 @@ import type { Activity, AppState, DayKey } from './types';
 import { DAYS } from './types';
 import { parseCSV } from './utils/csvParser';
 import { loadState, saveState } from './utils/storage';
+import { buildTimeRange, getActivityDurationMinutes } from './utils/time';
 
 import { Backlog } from './components/Backlog';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
@@ -100,11 +101,14 @@ function App() {
     if (activeId.startsWith('activity:')) {
       // Drop from backlog → create new entry
       const activityId = activeId.replace('activity:', '');
+      const activity = state.activities.find((a) => a.id === activityId);
+      const durationMinutes = getActivityDurationMinutes(activity);
+      const { startTime, endTime } = buildTimeRange(timeSlot, durationMinutes);
       setState((prev) => ({
         ...prev,
         schedule: [
           ...prev.schedule,
-          { id: crypto.randomUUID(), activityId, day, timeSlot },
+          { id: crypto.randomUUID(), activityId, day, timeSlot, startTime, endTime },
         ],
       }));
     } else if (activeId.startsWith('slot:')) {
@@ -112,9 +116,13 @@ function App() {
       const slotEntryId = activeId.replace('slot:', '');
       setState((prev) => ({
         ...prev,
-        schedule: prev.schedule.map((e) =>
-          e.id === slotEntryId ? { ...e, day, timeSlot } : e,
-        ),
+        schedule: prev.schedule.map((e) => {
+          if (e.id !== slotEntryId) return e;
+          const activity = prev.activities.find((a) => a.id === e.activityId);
+          const durationMinutes = getActivityDurationMinutes(activity);
+          const { startTime, endTime } = buildTimeRange(timeSlot, durationMinutes);
+          return { ...e, day, timeSlot, startTime, endTime };
+        }),
       }));
     }
   };
@@ -205,4 +213,3 @@ function App() {
 }
 
 export default App;
-

@@ -26,6 +26,8 @@ export interface ScheduledEntry {
   activityId: string;
   day: DayKey;
   timeSlot: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface AppState {
