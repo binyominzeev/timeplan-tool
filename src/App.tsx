@@ -12,13 +12,63 @@ import type { Activity, AppState, DayKey } from './types';
 import { DAYS } from './types';
 import { parseCSV } from './utils/csvParser';
 import { loadState, saveState } from './utils/storage';
-import { buildTimeRange, getActivityDurationMinutes } from './utils/time';
+import {
+  buildTimeRange,
+  getActivityDurationMinutes,
+  minutesToTime,
+  parseTimeToMinutes,
+} from './utils/time';
 
 import { Backlog } from './components/Backlog';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
 import { ProgressPanel } from './components/ProgressPanel';
 import { CSVImport } from './components/CSVImport';
 import { ActivityCard } from './components/ActivityCard';
+
+function getNextTimeRangeInDay(
+  prev: AppState,
+  day: DayKey,
+  timeSlot: string,
+  activityId: string,
+  excludeEntryId?: string,
+): { startTime: string; endTime: string } {
+  const activity = prev.activities.find((a) => a.id === activityId);
+  const durationMinutes = getActivityDurationMinutes(activity);
+
+  const slotStartMinutes = parseTimeToMinutes(timeSlot);
+  const dayIntervals = prev.schedule
+    .filter(
+      (entry) => entry.day === day && entry.id !== excludeEntryId,
+    )
+    .map((entry) => {
+      const entryActivity = prev.activities.find((a) => a.id === entry.activityId);
+      const entryDuration = getActivityDurationMinutes(entryActivity);
+      const entryStart = entry.startTime ?? entry.timeSlot;
+      const entryEnd = entry.endTime ?? buildTimeRange(entryStart, entryDuration).endTime;
+      return {
+        start: parseTimeToMinutes(entryStart),
+        end: parseTimeToMinutes(entryEnd),
+      };
+    })
+    .sort((a, b) => a.start - b.start);
+
+  let nextStartMinutes = slotStartMinutes;
+  for (const interval of dayIntervals) {
+    if (interval.end <= nextStartMinutes) continue;
+    const candidateEnd = nextStartMinutes + durationMinutes;
+
+    if (candidateEnd <= interval.start) {
+      break;
+    }
+
+    nextStartMinutes = interval.end;
+  }
+
+  return {
+    startTime: minutesToTime(nextStartMinutes),
+    endTime: minutesToTime(nextStartMinutes + durationMinutes),
+  };
+}
 
 function App() {
   const [state, setState] = useState<AppState>(loadState);
@@ -101,29 +151,40 @@ function App() {
     if (activeId.startsWith('activity:')) {
       // Drop from backlog → create new entry
       const activityId = activeId.replace('activity:', '');
-      const activity = state.activities.find((a) => a.id === activityId);
-      const durationMinutes = getActivityDurationMinutes(activity);
-      const { startTime, endTime } = buildTimeRange(timeSlot, durationMinutes);
       setState((prev) => ({
         ...prev,
         schedule: [
           ...prev.schedule,
-          { id: crypto.randomUUID(), activityId, day, timeSlot, startTime, endTime },
+          {
+            id: crypto.randomUUID(),
+            activityId,
+            day,
+            timeSlot,
+            ...getNextTimeRangeInDay(prev, day, timeSlot, activityId),
+          },
         ],
       }));
     } else if (activeId.startsWith('slot:')) {
       // Move existing slot entry
       const slotEntryId = activeId.replace('slot:', '');
-      setState((prev) => ({
-        ...prev,
-        schedule: prev.schedule.map((e) => {
-          if (e.id !== slotEntryId) return e;
-          const activity = prev.activities.find((a) => a.id === e.activityId);
-          const durationMinutes = getActivityDurationMinutes(activity);
-          const { startTime, endTime } = buildTimeRange(timeSlot, durationMinutes);
-          return { ...e, day, timeSlot, startTime, endTime };
-        }),
-      }));
+      setState((prev) => {
+        const movedEntry = prev.schedule.find((e) => e.id === slotEntryId);
+        if (!movedEntry) return prev;
+        const nextRange = getNextTimeRangeInDay(
+          prev,
+          day,
+          timeSlot,
+          movedEntry.activityId,
+          slotEntryId,
+        );
+        return {
+          ...prev,
+          schedule: prev.schedule.map((e) => {
+            if (e.id !== slotEntryId) return e;
+            return { ...e, day, timeSlot, ...nextRange };
+          }),
+        };
+      });
     }
   };
 

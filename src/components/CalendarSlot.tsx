@@ -1,7 +1,11 @@
 import { useDroppable } from '@dnd-kit/core';
 import type { Activity, DayKey, ScheduledEntry } from '../types';
 import { ActivityCard } from './ActivityCard';
-import { buildTimeRange, getActivityDurationMinutes } from '../utils/time';
+import {
+  buildTimeRange,
+  getActivityDurationMinutes,
+  parseTimeToMinutes,
+} from '../utils/time';
 
 interface Props {
   day: DayKey;
@@ -15,6 +19,11 @@ export function CalendarSlot({ day, timeSlot, entries, activities, onRemoveEntry
   const droppableId = `slot:${day}:${timeSlot}`;
 
   const { isOver, setNodeRef } = useDroppable({ id: droppableId });
+  const sortedEntries = [...entries].sort((a, b) => {
+    const aStart = a.startTime ?? a.timeSlot;
+    const bStart = b.startTime ?? b.timeSlot;
+    return parseTimeToMinutes(aStart) - parseTimeToMinutes(bStart);
+  });
 
   return (
     <div
@@ -26,7 +35,7 @@ export function CalendarSlot({ day, timeSlot, entries, activities, onRemoveEntry
           : 'border-dashed border-gray-200 bg-white hover:border-gray-300',
       ].join(' ')}
     >
-      {entries.map((entry) => {
+      {sortedEntries.map((entry) => {
         const activity = activities.find((a) => a.id === entry.activityId);
         if (!activity) return null;
         const durationMinutes = getActivityDurationMinutes(activity);
