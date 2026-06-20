@@ -1,0 +1,208 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
+
+import type { Activity, AppState, DayKey } from './types';
+import { DAYS } from './types';
+import { parseCSV } from './utils/csvParser';
+import { loadState, saveState } from './utils/storage';
+
+import { Backlog } from './components/Backlog';
+import { WeeklyPlanner } from './components/WeeklyPlanner';
+import { ProgressPanel } from './components/ProgressPanel';
+import { CSVImport } from './components/CSVImport';
+import { ActivityCard } from './components/ActivityCard';
+
+function App() {
+  const [state, setState] = useState<AppState>(loadState);
+
+  // Active drag item (for DragOverlay)
+  const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
+
+  // Persist on every state change
+  useEffect(() => {
+    saveState(state);
+  }, [state]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  // ── CSV import ────────────────────────────────────────────────────────────
+  const handleCSVFile = useCallback((text: string) => {
+    const imported = parseCSV(text);
+    if (imported.length === 0) {
+      alert('No activities found in the CSV. Please check the file format.');
+      return;
+    }
+    setState((prev) => ({
+      ...prev,
+      activities: imported,
+      // Clear schedule when re-importing so stale activityIds are removed
+      schedule: [],
+    }));
+  }, []);
+
+  const openFilePicker = () => {
+    document.getElementById('csv-file-input')?.click();
+  };
+
+  // ── Schedule mutations ────────────────────────────────────────────────────
+  const removeEntry = useCallback((entryId: string) => {
+    setState((prev) => ({
+      ...prev,
+      schedule: prev.schedule.filter((e) => e.id !== entryId),
+    }));
+  }, []);
+
+  const addTimeSlot = useCallback((slot: string) => {
+    setState((prev) => {
+      const sorted = [...prev.timeSlots, slot].sort();
+      return { ...prev, timeSlots: sorted };
+    });
+  }, []);
+
+  // ── Drag handlers ─────────────────────────────────────────────────────────
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    if (id.startsWith('activity:')) {
+      setActiveActivityId(id.replace('activity:', ''));
+    } else if (id.startsWith('slot:')) {
+      const data = event.active.data.current as { activityId: string };
+      setActiveActivityId(data.activityId);
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveActivityId(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // over must be a droppable slot: "slot:Mon:10:00"
+    if (!overId.startsWith('slot:')) return;
+
+    const parts = overId.split(':');
+    // Format: slot:<Day>:<HH>:<MM>
+    const day = parts[1] as DayKey;
+    const timeSlot = `${parts[2]}:${parts[3]}`;
+
+    if (!DAYS.includes(day)) return;
+
+    if (activeId.startsWith('activity:')) {
+      // Drop from backlog → create new entry
+      const activityId = activeId.replace('activity:', '');
+      setState((prev) => ({
+        ...prev,
+        schedule: [
+          ...prev.schedule,
+          { id: crypto.randomUUID(), activityId, day, timeSlot },
+        ],
+      }));
+    } else if (activeId.startsWith('slot:')) {
+      // Move existing slot entry
+      const slotEntryId = activeId.replace('slot:', '');
+      setState((prev) => ({
+        ...prev,
+        schedule: prev.schedule.map((e) =>
+          e.id === slotEntryId ? { ...e, day, timeSlot } : e,
+        ),
+      }));
+    }
+  };
+
+  // ── Active overlay card ───────────────────────────────────────────────────
+  const activeActivity: Activity | undefined = activeActivityId
+    ? state.activities.find((a) => a.id === activeActivityId)
+    : undefined;
+
+  return (
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
+        {/* Top bar */}
+        <header className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-gray-200 shrink-0">
+          <h1 className="text-lg font-bold text-gray-800 tracking-tight">📅 TimePlan</h1>
+          <span className="text-gray-300">|</span>
+          <span className="text-sm text-gray-500">Weekly time planner</span>
+          <div className="ml-auto flex items-center gap-2">
+            {state.activities.length > 0 && (
+              <span className="text-xs text-gray-400">
+                {state.activities.length} activities · {state.schedule.length} sessions scheduled
+              </span>
+            )}
+            <button
+              onClick={openFilePicker}
+              className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1"
+            >
+              ↑ Import CSV
+            </button>
+            {state.activities.length > 0 && (
+              <button
+                onClick={() =>
+                  setState((prev) => ({ ...prev, activities: [], schedule: [] }))
+                }
+                className="text-xs text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
+                title="Clear all data"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Progress bar */}
+        <ProgressPanel activities={state.activities} schedule={state.schedule} />
+
+        {/* Main area */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Backlog – fixed width */}
+          <div className="w-64 shrink-0 overflow-hidden flex flex-col">
+            <Backlog
+              activities={state.activities}
+              schedule={state.schedule}
+              onImportClick={openFilePicker}
+            />
+          </div>
+
+          {/* Planner – fills remaining space */}
+          <div className="flex-1 overflow-hidden">
+            <WeeklyPlanner
+              activities={state.activities}
+              schedule={state.schedule}
+              timeSlots={state.timeSlots}
+              onRemoveEntry={removeEntry}
+              onAddTimeSlot={addTimeSlot}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Hidden file input */}
+      <CSVImport onFile={handleCSVFile} />
+
+      {/* Drag overlay */}
+      <DragOverlay dropAnimation={null}>
+        {activeActivity && (
+          <div className="w-52 opacity-90 rotate-2 shadow-xl">
+            <ActivityCard
+              activity={activeActivity}
+              schedule={state.schedule}
+              inSlot={false}
+            />
+          </div>
+        )}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+export default App;
+
