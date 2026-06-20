@@ -72,6 +72,7 @@ function getNextTimeRangeInDay(
 
 function App() {
   const [state, setState] = useState<AppState>(loadState);
+  const handlePrintSchedule = useCallback(() => window.print(), []);
 
   // Active drag item (for DragOverlay)
   const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
@@ -195,9 +196,9 @@ function App() {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
+      <div className="printable-root flex flex-col h-screen bg-gray-100 overflow-hidden print:h-auto print:overflow-visible print:bg-white">
         {/* Top bar */}
-        <header className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-gray-200 shrink-0">
+        <header className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-gray-200 shrink-0 print:hidden">
           <h1 className="text-lg font-bold text-gray-800 tracking-tight">📅 TimePlan</h1>
           <span className="text-gray-300">|</span>
           <span className="text-sm text-gray-500">Weekly time planner</span>
@@ -213,6 +214,14 @@ function App() {
             >
               ↑ Import CSV
             </button>
+            {state.schedule.length > 0 && (
+              <button
+                onClick={handlePrintSchedule}
+                className="text-xs bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded-md transition-colors cursor-pointer"
+              >
+                Print
+              </button>
+            )}
             {state.activities.length > 0 && (
               <button
                 onClick={() =>
@@ -228,12 +237,14 @@ function App() {
         </header>
 
         {/* Progress bar */}
-        <ProgressPanel activities={state.activities} schedule={state.schedule} />
+        <div className="print:hidden">
+          <ProgressPanel activities={state.activities} schedule={state.schedule} />
+        </div>
 
         {/* Main area */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden print:block print:overflow-visible">
           {/* Backlog – fixed width */}
-          <div className="w-64 shrink-0 overflow-hidden flex flex-col">
+          <div className="w-64 shrink-0 overflow-hidden flex flex-col print:hidden">
             <Backlog
               activities={state.activities}
               schedule={state.schedule}
@@ -242,7 +253,7 @@ function App() {
           </div>
 
           {/* Planner – fills remaining space */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden print:overflow-visible">
             <WeeklyPlanner
               activities={state.activities}
               schedule={state.schedule}

@@ -49,7 +49,7 @@ export function ActivityCard({
       {/* Remove button (only in slot) */}
       {inSlot && onRemove && slotEntryId && (
         <button
-          className="absolute top-1 right-1 text-gray-300 hover:text-red-400 leading-none z-10 cursor-pointer"
+          className="absolute top-1 right-1 text-gray-300 hover:text-red-400 leading-none z-10 cursor-pointer print:hidden"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();

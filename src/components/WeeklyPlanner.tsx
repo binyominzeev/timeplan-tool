@@ -43,8 +43,11 @@ export function WeeklyPlanner({
 
   return (
     <div className="flex flex-col h-full bg-white">
+      <div className="hidden print:block px-4 pt-4 text-sm font-semibold text-gray-700">
+        Weekly schedule
+      </div>
       {/* Week-level stats bar */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50">
+      <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50 print:bg-white">
         <span className="font-semibold text-gray-600">Weekly total:</span>
         <span>{Math.round(totalWeeklyMinutes)} min</span>
         <span>·</span>
@@ -53,10 +56,10 @@ export function WeeklyPlanner({
         <span>{schedule.length} sessions</span>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-sm">
+      <div className="flex-1 overflow-auto print:overflow-visible">
+        <table className="w-full border-collapse text-sm print:text-xs">
           <thead>
-            <tr className="bg-gray-50 sticky top-0 z-10">
+            <tr className="bg-gray-50 sticky top-0 z-10 print:static print:bg-white">
               <th className="w-16 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-r border-gray-200 px-2 py-2">
                 Time
               </th>
@@ -102,7 +105,7 @@ export function WeeklyPlanner({
             ))}
 
             {/* Add slot row */}
-            <tr>
+            <tr className="print:hidden">
               <td colSpan={6} className="px-2 py-1.5">
                 {addingSlot ? (
                   <div className="flex items-center gap-2">

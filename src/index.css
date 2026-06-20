@@ -1,2 +1,24 @@
 @import "tailwindcss";
 
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .printable-root {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .printable-root tr,
+  .printable-root td,
+  .printable-root th {
+    break-inside: avoid;
+  }
+}
