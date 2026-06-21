@@ -28,6 +28,7 @@ export function WeeklyPlanner({
 }: Props) {
   const [newSlot, setNewSlot] = useState('');
   const [addingSlot, setAddingSlot] = useState(false);
+  const [pendingDeleteDay, setPendingDeleteDay] = useState<DayKey | null>(null);
 
   const handleAddSlot = () => {
     const raw = newSlot.trim();
@@ -85,14 +86,11 @@ export function WeeklyPlanner({
       alert('At least one day must remain.');
       return;
     }
-    const dayLabel = dayLabels[day] ?? day;
-    const confirmed = window.confirm(`Delete day "${dayLabel}" and all its scheduled entries?`);
-    if (!confirmed) return;
-    onRemoveDay(day);
+    setPendingDeleteDay(day);
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="relative flex flex-col h-full bg-white">
       <div className="hidden print:block px-4 pt-4 text-sm font-semibold text-gray-700">
         Weekly schedule
       </div>
@@ -217,6 +215,36 @@ export function WeeklyPlanner({
           </tbody>
         </table>
       </div>
+
+      {pendingDeleteDay && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-900/30 px-4 print:hidden">
+          <div className="w-full max-w-sm rounded-xl bg-white border border-gray-200 shadow-lg p-4">
+            <p className="text-sm font-semibold text-gray-800">Delete day</p>
+            <p className="mt-2 text-xs text-gray-500">
+              Delete "{dayLabels[pendingDeleteDay] ?? pendingDeleteDay}" and all entries scheduled in it?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteDay(null)}
+                className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onRemoveDay(pendingDeleteDay);
+                  setPendingDeleteDay(null);
+                }}
+                className="text-xs px-3 py-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
