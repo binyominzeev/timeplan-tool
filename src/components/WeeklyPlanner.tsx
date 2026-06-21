@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { Activity, DayKey, ScheduledEntry } from '../types';
-import { DAY_LABELS, DAYS } from '../types';
 import { DEFAULT_FILL_WINDOWS, minutesToHoursString, totalWindowsMinutes } from '../utils/time';
 import { CalendarSlot } from './CalendarSlot';
 
@@ -8,16 +7,24 @@ interface Props {
   activities: Activity[];
   schedule: ScheduledEntry[];
   timeSlots: string[];
+  days: DayKey[];
+  dayLabels: Record<DayKey, string>;
   onRemoveEntry: (entryId: string) => void;
   onAddTimeSlot: (slot: string) => void;
+  onAddDay: (label: string) => void;
+  onRemoveDay: (day: DayKey) => void;
 }
 
 export function WeeklyPlanner({
   activities,
   schedule,
   timeSlots,
+  days,
+  dayLabels,
   onRemoveEntry,
   onAddTimeSlot,
+  onAddDay,
+  onRemoveDay,
 }: Props) {
   const [newSlot, setNewSlot] = useState('');
   const [addingSlot, setAddingSlot] = useState(false);
@@ -63,9 +70,26 @@ export function WeeklyPlanner({
         return sum + (act?.dailyMinutes ?? 0);
       }, 0);
 
-  const totalWeeklyMinutes = DAYS.reduce((sum, d) => sum + minutesPerDay(d), 0);
+  const totalWeeklyMinutes = days.reduce((sum, d) => sum + minutesPerDay(d), 0);
   const windowTotal = totalWindowsMinutes(DEFAULT_FILL_WINDOWS);
-  const weeklyRemaining = Math.max(0, windowTotal * DAYS.length - totalWeeklyMinutes);
+  const weeklyRemaining = Math.max(0, windowTotal * days.length - totalWeeklyMinutes);
+
+  const handleAddDay = () => {
+    const label = window.prompt('New day name (for example: Sunday):')?.trim();
+    if (!label) return;
+    onAddDay(label);
+  };
+
+  const handleRemoveDay = (day: DayKey) => {
+    if (days.length <= 1) {
+      alert('At least one day must remain.');
+      return;
+    }
+    const dayLabel = dayLabels[day] ?? day;
+    const confirmed = window.confirm(`Delete day "${dayLabel}" and all its scheduled entries?`);
+    if (!confirmed) return;
+    onRemoveDay(day);
+  };
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -73,7 +97,7 @@ export function WeeklyPlanner({
         Weekly schedule
       </div>
       {/* Week-level stats bar */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50 print:bg-white">
+      <div className="hidden sm:flex items-center gap-4 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50 print:flex print:bg-white">
         <span className="font-semibold text-gray-600">Weekly total:</span>
         <span>{minutesToHoursString(totalWeeklyMinutes)}</span>
         <span>·</span>
@@ -91,12 +115,22 @@ export function WeeklyPlanner({
               <th className="w-16 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-r border-gray-200 px-2 py-2">
                 Time
               </th>
-              {DAYS.map((day) => (
+              {days.map((day) => (
                   <th
                   key={day}
                   className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 px-2 py-2"
                 >
-                  <div>{DAY_LABELS[day]}</div>
+                  <div className="flex items-center justify-center gap-2">
+                    <span>{dayLabels[day] ?? day}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDay(day)}
+                      className="print:hidden text-[10px] font-bold text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
+                      title={`Delete ${(dayLabels[day] ?? day)}`}
+                    >
+                      ×
+                    </button>
+                  </div>
                   <div className="text-gray-400 font-normal text-xs">
                     {minutesToHoursString(Math.max(0, totalWindowsMinutes(DEFAULT_FILL_WINDOWS) - minutesPerDay(day)))} szabad
                   </div>
@@ -110,7 +144,7 @@ export function WeeklyPlanner({
                 <td className="text-xs text-gray-400 font-mono border-r border-gray-200 px-2 py-1 align-top whitespace-nowrap">
                   {slot}
                 </td>
-                {DAYS.map((day) => {
+                {days.map((day) => {
                   const entries = schedule.filter(
                     (e) => e.day === day && e.timeSlot === slot,
                   );
@@ -134,7 +168,7 @@ export function WeeklyPlanner({
 
             {/* Add slot row */}
             <tr className="print:hidden">
-              <td colSpan={6} className="px-2 py-1.5">
+              <td colSpan={days.length + 1} className="px-2 py-1.5">
                 {addingSlot ? (
                   <div className="flex items-center gap-2">
                     <input
@@ -163,12 +197,20 @@ export function WeeklyPlanner({
                     </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setAddingSlot(true)}
-                    className="text-xs text-gray-400 hover:text-blue-500 flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    + Add time slot
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setAddingSlot(true)}
+                      className="text-xs text-gray-400 hover:text-blue-500 flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      + Add time slot
+                    </button>
+                    <button
+                      onClick={handleAddDay}
+                      className="text-xs text-gray-400 hover:text-emerald-600 flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      + Add day
+                    </button>
+                  </div>
                 )}
               </td>
             </tr>

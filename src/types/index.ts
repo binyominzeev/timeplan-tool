@@ -8,11 +8,11 @@ export interface Activity {
   notes: string;
 }
 
-export type DayKey = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri';
+export type DayKey = string;
 
-export const DAYS: DayKey[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+export const DEFAULT_DAYS: DayKey[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
-export const DAY_LABELS: Record<DayKey, string> = {
+export const DEFAULT_DAY_LABELS: Record<DayKey, string> = {
   Mon: 'Monday',
   Tue: 'Tuesday',
   Wed: 'Wednesday',
@@ -34,4 +34,6 @@ export interface AppState {
   activities: Activity[];
   schedule: ScheduledEntry[];
   timeSlots: string[];
+  days: DayKey[];
+  dayLabels: Record<DayKey, string>;
 }
