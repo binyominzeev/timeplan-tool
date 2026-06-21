@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Activity, DayKey, ScheduledEntry } from '../types';
 import { DAY_LABELS, DAYS } from '../types';
+import { DEFAULT_FILL_WINDOWS, minutesToHoursString, totalWindowsMinutes } from '../utils/time';
 import { CalendarSlot } from './CalendarSlot';
 
 interface Props {
@@ -40,6 +41,8 @@ export function WeeklyPlanner({
       }, 0);
 
   const totalWeeklyMinutes = DAYS.reduce((sum, d) => sum + minutesPerDay(d), 0);
+  const windowTotal = totalWindowsMinutes(DEFAULT_FILL_WINDOWS);
+  const weeklyRemaining = Math.max(0, windowTotal * DAYS.length - totalWeeklyMinutes);
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -49,11 +52,13 @@ export function WeeklyPlanner({
       {/* Week-level stats bar */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50 print:bg-white">
         <span className="font-semibold text-gray-600">Weekly total:</span>
-        <span>{Math.round(totalWeeklyMinutes)} min</span>
-        <span>·</span>
-        <span>{(totalWeeklyMinutes / 60).toFixed(1)} h</span>
+        <span>{minutesToHoursString(totalWeeklyMinutes)}</span>
         <span>·</span>
         <span>{schedule.length} sessions</span>
+        <span>·</span>
+        <span className="text-gray-500">Kitölthető: {DEFAULT_FILL_WINDOWS.map(w=>`${w.start}-${w.end}`).join(', ')} ({minutesToHoursString(windowTotal)} / nap)</span>
+        <span>·</span>
+        <span className="text-orange-500">Heti szabad: {minutesToHoursString(weeklyRemaining)}</span>
       </div>
 
       <div className="flex-1 overflow-auto print:overflow-visible">
@@ -64,13 +69,13 @@ export function WeeklyPlanner({
                 Time
               </th>
               {DAYS.map((day) => (
-                <th
+                  <th
                   key={day}
                   className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 px-2 py-2"
                 >
                   <div>{DAY_LABELS[day]}</div>
                   <div className="text-gray-400 font-normal text-xs">
-                    {minutesPerDay(day) > 0 && `${minutesPerDay(day)} min`}
+                    {minutesToHoursString(Math.max(0, totalWindowsMinutes(DEFAULT_FILL_WINDOWS) - minutesPerDay(day)))} szabad
                   </div>
                 </th>
               ))}

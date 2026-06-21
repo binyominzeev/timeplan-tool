@@ -1,4 +1,5 @@
 import type { Activity, DayKey, ScheduledEntry } from '../types';
+import { DEFAULT_FILL_WINDOWS, minutesToHoursString, totalWindowsMinutes } from '../utils/time';
 
 interface Props {
   activities: Activity[];
@@ -79,10 +80,12 @@ export function DayStats({ activities, schedule }: DayStatsProps) {
             const act = activities.find((a) => a.id === e.activityId);
             return sum + (act?.dailyMinutes ?? 0);
           }, 0);
+        const windowTotal = totalWindowsMinutes(DEFAULT_FILL_WINDOWS);
+        const remaining = Math.max(0, windowTotal - mins);
         return (
           <div key={key} className="text-xs text-center">
             <p className="font-semibold text-gray-500">{label}</p>
-            <p className="text-gray-400">{mins} min</p>
+            <p className="text-gray-400">{minutesToHoursString(remaining)} szabad</p>
           </div>
         );
       })}
