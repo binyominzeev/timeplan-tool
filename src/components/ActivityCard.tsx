@@ -8,6 +8,7 @@ interface Props {
   inSlot?: boolean;
   slotEntryId?: string;
   onRemove?: (entryId: string) => void;
+  onEdit?: () => void;
   timeRangeLabel?: string;
 }
 
@@ -17,6 +18,7 @@ export function ActivityCard({
   inSlot = false,
   slotEntryId,
   onRemove,
+  onEdit,
   timeRangeLabel,
 }: Props) {
   const draggableId = inSlot && slotEntryId ? `slot:${slotEntryId}` : `activity:${activity.id}`;
@@ -61,6 +63,20 @@ export function ActivityCard({
         </button>
       )}
 
+      {!inSlot && onEdit && (
+        <button
+          className="absolute top-1 right-1 text-gray-300 hover:text-blue-500 leading-none z-10 cursor-pointer print:hidden"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          title="Edit activity"
+        >
+          ✎
+        </button>
+      )}
+
       <p className={`font-semibold leading-tight text-gray-800 ${inSlot ? 'pr-3' : ''}`}>
         {activity.name}
       </p>
@@ -69,20 +85,20 @@ export function ActivityCard({
         {inSlot && timeRangeLabel && (
           <span className="whitespace-nowrap font-medium text-blue-600">{timeRangeLabel}</span>
         )}
-        {activity.dailyMinutes != null && (
-          <span className="whitespace-nowrap">{activity.dailyMinutes} min</span>
+        {!inSlot && activity.dailyMinutes != null && (
+          <span className="whitespace-nowrap print:hidden">{activity.dailyMinutes} min</span>
         )}
-        {activity.weeklyCount != null && (
-          <span className="whitespace-nowrap">{activity.weeklyCount}×/week</span>
+        {!inSlot && activity.weeklyCount != null && (
+          <span className="whitespace-nowrap print:hidden">{activity.weeklyCount}×/week</span>
         )}
       </div>
 
       {!inSlot && activity.weeklyHours != null && (
-        <p className="text-gray-400 mt-0.5">{activity.weeklyHours}h/week</p>
+        <p className="text-gray-400 mt-0.5 print:hidden">{activity.weeklyHours}h/week</p>
       )}
 
       {!inSlot && target > 0 && (
-        <div className="mt-2">
+        <div className="mt-2 print:hidden">
           <div className="flex justify-between text-xs text-gray-400 mb-0.5">
             <span>{scheduled}/{target} scheduled</span>
             {remaining > 0 && <span className="text-orange-400">{remaining} left</span>}

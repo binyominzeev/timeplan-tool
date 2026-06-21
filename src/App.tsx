@@ -120,6 +120,22 @@ function App() {
     });
   }, []);
 
+  const addActivity = useCallback((activity: Omit<Activity, 'id'>) => {
+    setState((prev) => ({
+      ...prev,
+      activities: [...prev.activities, { id: crypto.randomUUID(), ...activity }],
+    }));
+  }, []);
+
+  const updateActivity = useCallback((activityId: string, activity: Omit<Activity, 'id'>) => {
+    setState((prev) => ({
+      ...prev,
+      activities: prev.activities.map((current) =>
+        current.id === activityId ? { ...current, ...activity } : current,
+      ),
+    }));
+  }, []);
+
   // ── Drag handlers ─────────────────────────────────────────────────────────
   const handleDragStart = (event: DragStartEvent) => {
     const id = String(event.active.id);
@@ -249,6 +265,8 @@ function App() {
               activities={state.activities}
               schedule={state.schedule}
               onImportClick={openFilePicker}
+              onAddActivity={addActivity}
+              onUpdateActivity={updateActivity}
             />
           </div>
 
