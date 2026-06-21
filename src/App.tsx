@@ -264,7 +264,6 @@ function App() {
             <Backlog
               activities={state.activities}
               schedule={state.schedule}
-              onImportClick={openFilePicker}
               onAddActivity={addActivity}
               onUpdateActivity={updateActivity}
             />

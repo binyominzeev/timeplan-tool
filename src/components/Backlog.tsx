@@ -7,7 +7,6 @@ type ActivityInput = Omit<Activity, 'id'>;
 interface Props {
   activities: Activity[];
   schedule: ScheduledEntry[];
-  onImportClick: () => void;
   onAddActivity: (activity: ActivityInput) => void;
   onUpdateActivity: (activityId: string, activity: ActivityInput) => void;
 }
@@ -51,7 +50,6 @@ function parseOptionalNumber(value: string): number | null {
 export function Backlog({
   activities,
   schedule,
-  onImportClick,
   onAddActivity,
   onUpdateActivity,
 }: Props) {
@@ -123,14 +121,12 @@ export function Backlog({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white">
         <h2 className="text-base font-bold text-gray-700">Activities</h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={openAddDialog}
-            className="flex items-center gap-1 text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-md transition-colors cursor-pointer"
-          >
-            <span>+</span> Add
-          </button>
-        </div>
+        <button
+          onClick={openAddDialog}
+          className="flex items-center gap-1 text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-md transition-colors cursor-pointer"
+        >
+          <span>+</span> Add
+        </button>
       </div>
 
       {activities.length === 0 ? (
