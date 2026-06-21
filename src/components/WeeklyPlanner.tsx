@@ -23,13 +23,36 @@ export function WeeklyPlanner({
   const [addingSlot, setAddingSlot] = useState(false);
 
   const handleAddSlot = () => {
-    const val = newSlot.trim();
+    const raw = newSlot.trim();
+    const parsed = parseFlexibleTime(raw);
+    const val = parsed ?? raw;
     if (val && !timeSlots.includes(val)) {
       onAddTimeSlot(val);
     }
     setNewSlot('');
     setAddingSlot(false);
   };
+
+  function parseFlexibleTime(input: string): string | null {
+    const s = input.trim().toLowerCase();
+    if (!s) return null;
+
+    // Accept formats: '9', '9:00', '09:00', '9:00 am', '9am', '12:30pm'
+    const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+    if (!m) return null;
+    let hh = Number(m[1]);
+    const mm = m[2] ? Number(m[2]) : 0;
+    const ampm = m[3] ? m[3].toLowerCase() : null;
+    if (mm < 0 || mm > 59) return null;
+    if (ampm) {
+      if (hh === 12 && ampm === 'am') hh = 0;
+      else if (ampm === 'pm' && hh < 12) hh += 12;
+    }
+    if (hh < 0 || hh > 23) return null;
+    const hhStr = String(hh).padStart(2, '0');
+    const mmStr = String(mm).padStart(2, '0');
+    return `${hhStr}:${mmStr}`;
+  }
 
   // Stats per day
   const minutesPerDay = (day: DayKey): number =>
@@ -115,11 +138,12 @@ export function WeeklyPlanner({
                 {addingSlot ? (
                   <div className="flex items-center gap-2">
                     <input
-                      type="time"
+                      type="text"
                       value={newSlot}
                       onChange={(e) => setNewSlot(e.target.value)}
                       className="border border-gray-300 rounded px-2 py-1 text-xs"
                       autoFocus
+                      placeholder="09:00 or 9:00 AM"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handleAddSlot();
                         if (e.key === 'Escape') setAddingSlot(false);
