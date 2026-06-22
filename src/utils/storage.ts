@@ -62,3 +62,51 @@ export function saveState(state: AppState): void {
     // ignore quota errors
   }
 }
+
+// ── Favorites ─────────────────────────────────────────────────────────────
+
+export interface Favorite {
+  name: string;
+  data: AppState;
+}
+
+const FAVORITES_KEY = 'timeplan_favorites';
+const FAVORITES_COUNT = 4;
+
+export function loadFavorites(): Array<Favorite | null> {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown[];
+      if (Array.isArray(parsed)) {
+        const result: Array<Favorite | null> = [];
+        for (let i = 0; i < FAVORITES_COUNT; i++) {
+          const item = parsed[i];
+          if (
+            item &&
+            typeof item === 'object' &&
+            'name' in item &&
+            'data' in item &&
+            typeof (item as { name: unknown }).name === 'string'
+          ) {
+            result.push(item as Favorite);
+          } else {
+            result.push(null);
+          }
+        }
+        return result;
+      }
+    }
+  } catch {
+    // ignore corrupt data
+  }
+  return Array<null>(FAVORITES_COUNT).fill(null);
+}
+
+export function saveFavorites(favorites: Array<Favorite | null>): void {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+  } catch {
+    // ignore quota errors
+  }
+}

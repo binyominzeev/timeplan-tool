@@ -10,6 +10,7 @@ interface Props {
   days: DayKey[];
   dayLabels: Record<DayKey, string>;
   onRemoveEntry: (entryId: string) => void;
+  onShiftEntryLater: (entryId: string) => void;
   onAddTimeSlot: (slot: string) => void;
   onAddDay: (label: string) => void;
   onRemoveDay: (day: DayKey) => void;
@@ -22,6 +23,7 @@ export function WeeklyPlanner({
   days,
   dayLabels,
   onRemoveEntry,
+  onShiftEntryLater,
   onAddTimeSlot,
   onAddDay,
   onRemoveDay,
@@ -157,6 +159,7 @@ export function WeeklyPlanner({
                         entries={entries}
                         activities={activities}
                         onRemoveEntry={onRemoveEntry}
+                        onShiftEntryLater={onShiftEntryLater}
                       />
                     </td>
                   );

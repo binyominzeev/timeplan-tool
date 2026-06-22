@@ -13,9 +13,17 @@ interface Props {
   entries: ScheduledEntry[];
   activities: Activity[];
   onRemoveEntry: (entryId: string) => void;
+  onShiftEntryLater: (entryId: string) => void;
 }
 
-export function CalendarSlot({ day, timeSlot, entries, activities, onRemoveEntry }: Props) {
+export function CalendarSlot({
+  day,
+  timeSlot,
+  entries,
+  activities,
+  onRemoveEntry,
+  onShiftEntryLater,
+}: Props) {
   const droppableId = `slot:${day}:${timeSlot}`;
 
   const { isOver, setNodeRef } = useDroppable({ id: droppableId });
@@ -50,6 +58,7 @@ export function CalendarSlot({ day, timeSlot, entries, activities, onRemoveEntry
             inSlot
             slotEntryId={entry.id}
             onRemove={onRemoveEntry}
+            onShiftLater={onShiftEntryLater}
             timeRangeLabel={`${startTime}–${endTime}`}
           />
         );

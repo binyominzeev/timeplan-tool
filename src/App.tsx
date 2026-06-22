@@ -11,7 +11,8 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import type { Activity, AppState, DayKey } from './types';
 import { DEFAULT_DAYS, DEFAULT_DAY_LABELS } from './types';
 import { parseCSV } from './utils/csvParser';
-import { loadState, saveState } from './utils/storage';
+import { loadFavorites, loadState, saveFavorites, saveState } from './utils/storage';
+import type { Favorite } from './utils/storage';
 import {
   buildTimeRange,
   getActivityDurationMinutes,
@@ -70,10 +71,119 @@ function getNextTimeRangeInDay(
   };
 }
 
+function getEntryRangeMinutes(
+  state: AppState,
+  entry: AppState['schedule'][number],
+): { start: number; end: number } {
+  const activity = state.activities.find((a) => a.id === entry.activityId);
+  const duration = getActivityDurationMinutes(activity);
+  const start = parseTimeToMinutes(entry.startTime ?? entry.timeSlot);
+  const end = parseTimeToMinutes(entry.endTime ?? buildTimeRange(entry.startTime ?? entry.timeSlot, duration).endTime);
+  return { start, end };
+}
+
+function shiftEntryByMinutesWithCascade(
+  prev: AppState,
+  entryId: string,
+  minutes: number,
+): AppState {
+  const delta = Math.round(minutes);
+  if (!Number.isFinite(minutes) || delta === 0) return prev;
+
+  const target = prev.schedule.find((entry) => entry.id === entryId);
+  if (!target) return prev;
+
+  const dayEntries = prev.schedule
+    .filter((entry) => entry.day === target.day)
+    .sort((a, b) => {
+      const aStart = parseTimeToMinutes(a.startTime ?? a.timeSlot);
+      const bStart = parseTimeToMinutes(b.startTime ?? b.timeSlot);
+      if (aStart !== bStart) return aStart - bStart;
+      return a.id.localeCompare(b.id);
+    });
+
+  const targetIndex = dayEntries.findIndex((entry) => entry.id === entryId);
+  if (targetIndex === -1) return prev;
+
+  const updates = new Map<string, { startTime: string; endTime: string }>();
+  const targetRange = getEntryRangeMinutes(prev, target);
+
+  if (delta > 0) {
+    let chainEnd = targetRange.end + delta;
+
+    updates.set(target.id, {
+      startTime: minutesToTime(targetRange.start + delta),
+      endTime: minutesToTime(chainEnd),
+    });
+
+    for (let index = targetIndex + 1; index < dayEntries.length; index += 1) {
+      const current = dayEntries[index];
+      const currentRange = getEntryRangeMinutes(prev, current);
+
+      if (currentRange.start >= chainEnd) {
+        break;
+      }
+
+      const shiftBy = chainEnd - currentRange.start;
+      const nextStart = currentRange.start + shiftBy;
+      const nextEnd = currentRange.end + shiftBy;
+
+      updates.set(current.id, {
+        startTime: minutesToTime(nextStart),
+        endTime: minutesToTime(nextEnd),
+      });
+
+      chainEnd = nextEnd;
+    }
+  } else {
+    let chainStart = targetRange.start + delta;
+
+    updates.set(target.id, {
+      startTime: minutesToTime(chainStart),
+      endTime: minutesToTime(targetRange.end + delta),
+    });
+
+    for (let index = targetIndex - 1; index >= 0; index -= 1) {
+      const current = dayEntries[index];
+      const currentRange = getEntryRangeMinutes(prev, current);
+
+      if (currentRange.end <= chainStart) {
+        break;
+      }
+
+      const shiftBy = chainStart - currentRange.end;
+      const nextStart = currentRange.start + shiftBy;
+      const nextEnd = currentRange.end + shiftBy;
+
+      updates.set(current.id, {
+        startTime: minutesToTime(nextStart),
+        endTime: minutesToTime(nextEnd),
+      });
+
+      chainStart = nextStart;
+    }
+  }
+
+  if (updates.size === 0) return prev;
+
+  return {
+    ...prev,
+    schedule: prev.schedule.map((entry) => {
+      const update = updates.get(entry.id);
+      return update ? { ...entry, ...update } : entry;
+    }),
+  };
+}
+
 function App() {
   const [state, setState] = useState<AppState>(loadState);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [showProgressPanel, setShowProgressPanel] = useState(true);
+  const [showDesktopActivities, setShowDesktopActivities] = useState(true);
   const [showMobileActivities, setShowMobileActivities] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [favorites, setFavorites] = useState<Array<Favorite | null>>(loadFavorites);
   const handlePrintSchedule = useCallback(() => window.print(), []);
 
   // Active drag item (for DragOverlay)
@@ -83,6 +193,23 @@ function App() {
   useEffect(() => {
     saveState(state);
   }, [state]);
+
+  // Persist favorites
+  useEffect(() => {
+    saveFavorites(favorites);
+  }, [favorites]);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -227,6 +354,19 @@ function App() {
     }));
   }, []);
 
+  const shiftEntryLater = useCallback((entryId: string) => {
+    const raw = window.prompt('Hány perccel tolod későbbre a kezdést?', '15')?.trim();
+    if (!raw) return;
+
+    const minutes = Number(raw);
+    if (!Number.isFinite(minutes) || minutes === 0) {
+      alert('Adj meg egy nem nulla perc értéket.');
+      return;
+    }
+
+    setState((prev) => shiftEntryByMinutesWithCascade(prev, entryId, minutes));
+  }, []);
+
   const addTimeSlot = useCallback((slot: string) => {
     setState((prev) => {
       const sorted = [...prev.timeSlots, slot].sort();
@@ -289,6 +429,35 @@ function App() {
       ),
     }));
   }, []);
+
+  // ── Favorites ────────────────────────────────────────────────────────────
+  const handleSaveToFavorite = useCallback(
+    (index: number) => {
+      const current = favorites[index];
+      const suggested = current?.name ?? `Preset ${index + 1}`;
+      const name = window
+        .prompt(`Adj nevet a(z) ${index + 1}. presetnek (ez menti felül a meglévőt):`, suggested)
+        ?.trim();
+      if (!name) return;
+      setFavorites((prev) => {
+        const next = [...prev];
+        next[index] = { name, data: state };
+        return next;
+      });
+      setMenuOpen(false);
+    },
+    [favorites, state],
+  );
+
+  const handleLoadFavorite = useCallback(
+    (index: number) => {
+      const fav = favorites[index];
+      if (!fav) return;
+      setState(fav.data);
+      setMenuOpen(false);
+    },
+    [favorites],
+  );
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
   const handleDragStart = (event: DragStartEvent) => {
@@ -379,28 +548,10 @@ function App() {
               </span>
             )}
             <button
-              onClick={() => setShowMobileActivities((prev) => !prev)}
-              className="sm:hidden text-xs bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-md transition-colors cursor-pointer"
-            >
-              {showMobileActivities ? 'Hide Activities' : 'Activities'}
-            </button>
-            <button
               onClick={openFilePicker}
               className="hidden sm:flex text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-md transition-colors cursor-pointer items-center gap-1"
             >
               ↑ Import CSV
-            </button>
-            <button
-              onClick={exportAsJson}
-              className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-md transition-colors cursor-pointer"
-            >
-              Save JSON
-            </button>
-            <button
-              onClick={openJsonPicker}
-              className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-md transition-colors cursor-pointer"
-            >
-              Load JSON
             </button>
             {state.schedule.length > 0 && (
               <button
@@ -410,29 +561,127 @@ function App() {
                 Print
               </button>
             )}
-            {state.activities.length > 0 && (
+            {/* Main menu */}
+            <div ref={menuRef} className="relative">
               <button
-                onClick={() =>
-                  setState((prev) => ({ ...prev, activities: [], schedule: [] }))
-                }
-                className="text-xs text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
-                title="Clear all data"
+                type="button"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                className="text-xs bg-white hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-md border border-gray-200 shadow-sm transition-colors cursor-pointer flex items-center gap-1.5"
+                title="Menü"
               >
-                Clear
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4 text-gray-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+                <span>Menü</span>
               </button>
-            )}
+
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 overflow-hidden">
+                  {/* Favorites section */}
+                  <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    Kedvencek
+                  </p>
+                  {favorites.map((fav, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1 px-2 mx-1 rounded-md group"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleLoadFavorite(i)}
+                        disabled={!fav}
+                        className={`flex-1 text-left text-sm py-1.5 px-1 truncate transition-colors ${
+                          fav
+                            ? 'text-gray-700 hover:text-indigo-600 cursor-pointer'
+                            : 'text-gray-300 cursor-default italic'
+                        }`}
+                        title={fav ? `Betölt: ${fav.name}` : 'Üres preset'}
+                      >
+                        {fav ? fav.name : `— Üres preset ${i + 1} —`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveToFavorite(i)}
+                        className="shrink-0 p-1 rounded text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 transition-colors cursor-pointer"
+                        title={`Ide menti az aktuális napirendet (${i + 1}. preset)`}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3M8 7V3m0 4h8M8 3h8v4"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+
+                  <hr className="my-1 border-gray-100" />
+
+                  {/* JSON actions */}
+                  <p className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    Fájl
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { exportAsJson(); setMenuOpen(false); }}
+                    className="w-full text-left px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    💾 Save JSON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { openJsonPicker(); setMenuOpen(false); }}
+                    className="w-full text-left px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    📂 Load JSON
+                  </button>
+                  {state.activities.length > 0 && (
+                    <>
+                      <hr className="my-1 border-gray-100" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setState((prev) => ({ ...prev, activities: [], schedule: [] }));
+                          setMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-1.5 text-sm text-red-400 hover:bg-red-50 transition-colors cursor-pointer"
+                      >
+                        🗑 Clear all data
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
         {/* Progress bar */}
-        <div className="hidden sm:block print:hidden">
-          <ProgressPanel activities={state.activities} schedule={state.schedule} />
-        </div>
+        {showProgressPanel && (
+          <div className="hidden sm:block print:hidden">
+            <ProgressPanel activities={state.activities} schedule={state.schedule} />
+          </div>
+        )}
 
         {/* Main area */}
         <div className="relative flex flex-1 overflow-hidden print:block print:overflow-visible">
           {/* Backlog – fixed width */}
-          <div className="hidden sm:flex w-64 shrink-0 overflow-hidden flex-col print:hidden">
+          <div className={`${showDesktopActivities ? 'hidden sm:flex' : 'hidden'} w-64 shrink-0 overflow-hidden flex-col print:hidden`}>
             <Backlog
               activities={state.activities}
               schedule={state.schedule}
@@ -476,12 +725,37 @@ function App() {
               days={state.days}
               dayLabels={state.dayLabels}
               onRemoveEntry={removeEntry}
+              onShiftEntryLater={shiftEntryLater}
               onAddTimeSlot={addTimeSlot}
               onAddDay={addDay}
               onRemoveDay={removeDay}
             />
           </div>
         </div>
+      </div>
+
+      <div className="fixed right-4 bottom-4 z-40 flex max-w-[calc(100vw-2rem)] flex-wrap justify-end gap-2 print:hidden">
+        <button
+          type="button"
+          onClick={() => setShowProgressPanel((prev) => !prev)}
+          className="text-xs bg-white/95 hover:bg-white text-gray-700 px-3 py-1.5 rounded-md border border-gray-200 shadow-sm transition-colors cursor-pointer backdrop-blur"
+        >
+          {showProgressPanel ? 'Hide Weekly Progress' : 'Show Weekly Progress'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowMobileActivities((prev) => !prev)}
+          className="sm:hidden text-xs bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-md shadow-sm transition-colors cursor-pointer"
+        >
+          {showMobileActivities ? 'Hide Activities' : 'Show Activities'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDesktopActivities((prev) => !prev)}
+          className="hidden sm:inline-flex text-xs bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-md shadow-sm transition-colors cursor-pointer"
+        >
+          {showDesktopActivities ? 'Hide Activities' : 'Show Activities'}
+        </button>
       </div>
 
       {/* Hidden file input */}
