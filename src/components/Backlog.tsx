@@ -117,7 +117,7 @@ export function Backlog({
   };
 
   return (
-    <aside className="relative flex flex-col h-full bg-gray-50 border-r border-gray-200">
+    <aside className="tp-backlog-root relative flex flex-col h-full bg-gray-50 border-r border-gray-200">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white">
         <h2 className="text-base font-bold text-gray-700">Activities</h2>
@@ -155,12 +155,19 @@ export function Backlog({
                 )}
                 <div className="space-y-2">
                   {group.map((activity) => (
-                    <ActivityCard
+                    <div
                       key={activity.id}
-                      activity={activity}
-                      schedule={schedule}
-                      onEdit={() => openEditDialog(activity)}
-                    />
+                      className="tp-backlog-draggable"
+                      data-activity-id={activity.id}
+                      data-activity-title={activity.name}
+                      data-duration-minutes={activity.dailyMinutes ?? 60}
+                    >
+                      <ActivityCard
+                        activity={activity}
+                        schedule={schedule}
+                        onEdit={() => openEditDialog(activity)}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>

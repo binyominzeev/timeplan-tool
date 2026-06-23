@@ -3,8 +3,6 @@ import { DEFAULT_DAYS, DEFAULT_DAY_LABELS } from '../types';
 
 const STORAGE_KEY = 'timeplan_state';
 
-const DEFAULT_TIME_SLOTS = ['10:00', '11:00', '15:00', '16:00', '17:00'];
-
 function toUniqueStringArray(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   const normalized = values
@@ -23,25 +21,175 @@ function normalizeDayLabels(
 
   return days.reduce<Record<string, string>>((acc, day) => {
     const candidate = source[day];
-    acc[day] = typeof candidate === 'string' && candidate.trim() ? candidate : day;
+    acc[day] = typeof candidate === 'string' && candidate.trim() ? candidate : (DEFAULT_DAY_LABELS[day] ?? day);
     return acc;
   }, {});
+}
+
+function normalizeTimeString(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const value = raw.trim();
+  if (!value) return fallback;
+
+  const match = value.match(/^(\d{1,2})(?::(\d{1,2}))?$/);
+  if (!match) return fallback;
+
+  let hh = Number(match[1]);
+  let mm = Number(match[2] ?? '0');
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return fallback;
+
+  hh = Math.max(0, Math.min(23, hh));
+  mm = Math.max(0, Math.min(59, mm));
+
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function normalizeSchedule(raw: unknown, days: string[]): {
+  schedule: AppState['schedule'];
+  legacyNames: Record<string, string>;
+} {
+  if (!Array.isArray(raw)) return { schedule: [], legacyNames: {} };
+
+  const legacyNames: Record<string, string> = {};
+
+  const schedule = raw
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    .map((entry, index) => {
+      const entryIdRaw = entry.id;
+      const entryId =
+        typeof entryIdRaw === 'string'
+          ? entryIdRaw
+          : (typeof entryIdRaw === 'number' ? String(entryIdRaw) : `legacy-entry-${index}`);
+
+      const activityIdRaw =
+        entry.activityId ??
+        entry.activityID ??
+        entry.activity;
+      const activityNameRaw =
+        (typeof entry.activityName === 'string' && entry.activityName.trim()
+          ? entry.activityName
+          : undefined) ??
+        (typeof entry.title === 'string' && entry.title.trim() ? entry.title : undefined) ??
+        (typeof entry.name === 'string' && entry.name.trim() ? entry.name : undefined);
+
+      const activityId =
+        typeof activityIdRaw === 'string'
+          ? activityIdRaw
+          : (typeof activityIdRaw === 'number' ? String(activityIdRaw) : undefined);
+
+      const fallbackActivityId =
+        activityNameRaw
+          ? `legacy:${activityNameRaw.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'activity'}`
+          : 'legacy:unknown';
+
+      const resolvedActivityId = activityId ?? fallbackActivityId;
+      if (activityNameRaw) {
+        legacyNames[resolvedActivityId] = activityNameRaw;
+      }
+
+      const start = normalizeTimeString(entry.startTime, '09:00');
+      const slot =
+        typeof entry.timeSlot === 'string' && entry.timeSlot
+          ? normalizeTimeString(entry.timeSlot, start)
+          : start;
+      const day =
+        typeof entry.day === 'string' && days.includes(entry.day)
+          ? entry.day
+          : days[0];
+
+      return {
+        id: entryId,
+        activityId: resolvedActivityId,
+        day,
+        timeSlot: slot,
+        startTime: start,
+        endTime: normalizeTimeString(entry.endTime, ''),
+      };
+    })
+    .map((entry) => ({
+      ...entry,
+      endTime: entry.endTime || undefined,
+    }));
+
+  return { schedule, legacyNames };
+}
+
+function remapScheduleActivityIds(
+  schedule: AppState['schedule'],
+  activities: AppState['activities'],
+): AppState['schedule'] {
+  const existing = new Set(activities.map((a) => a.id));
+  const byName = new Map(activities.map((a) => [a.name.trim().toLowerCase(), a.id]));
+
+  return schedule.map((entry) => {
+    if (existing.has(entry.activityId)) return entry;
+
+    const fallbackName = String((entry as unknown as { name?: string }).name ?? '').trim().toLowerCase();
+    const mapped = fallbackName ? byName.get(fallbackName) : undefined;
+    return mapped ? { ...entry, activityId: mapped } : entry;
+  });
+}
+
+export function normalizeAppState(raw: unknown): AppState {
+  const parsed = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const days = toUniqueStringArray(parsed.days);
+  const effectiveDays = days.length > 0 ? days : DEFAULT_DAYS;
+
+  const rawActivities = Array.isArray(parsed.activities) ? parsed.activities : [];
+  const activities = rawActivities
+    .filter((activity): activity is Record<string, unknown> => Boolean(activity) && typeof activity === 'object')
+    .map((activity, index) => {
+      const rawId = activity.id;
+      const id =
+        typeof rawId === 'string'
+          ? rawId
+          : (typeof rawId === 'number' ? String(rawId) : `legacy-activity-${index}`);
+      const name = typeof activity.name === 'string' && activity.name.trim() ? activity.name : `Activity ${index + 1}`;
+      const category = typeof activity.category === 'string' ? activity.category : '';
+      const dailyMinutes = typeof activity.dailyMinutes === 'number' && Number.isFinite(activity.dailyMinutes)
+        ? activity.dailyMinutes
+        : null;
+      const weeklyHours = typeof activity.weeklyHours === 'number' && Number.isFinite(activity.weeklyHours)
+        ? activity.weeklyHours
+        : null;
+      const weeklyCount = typeof activity.weeklyCount === 'number' && Number.isFinite(activity.weeklyCount)
+        ? activity.weeklyCount
+        : null;
+      const notes = typeof activity.notes === 'string' ? activity.notes : '';
+      return { id, name, category, dailyMinutes, weeklyHours, weeklyCount, notes };
+    });
+
+  const { schedule, legacyNames } = normalizeSchedule(parsed.schedule, effectiveDays);
+  const knownActivityIds = new Set(activities.map((activity) => activity.id));
+
+  const syntheticActivities = schedule
+    .filter((entry) => !knownActivityIds.has(entry.activityId))
+    .map((entry, index) => ({
+      id: entry.activityId,
+      name: legacyNames[entry.activityId] ?? `Legacy activity ${index + 1}`,
+      category: 'Legacy',
+      dailyMinutes: null,
+      weeklyHours: null,
+      weeklyCount: null,
+      notes: 'Auto-created from legacy preset.',
+    }))
+    .filter((activity, index, arr) => arr.findIndex((item) => item.id === activity.id) === index);
+
+  const mergedActivities = [...activities, ...syntheticActivities];
+
+  return {
+    activities: mergedActivities,
+    schedule: remapScheduleActivityIds(schedule, mergedActivities),
+    days: effectiveDays,
+    dayLabels: normalizeDayLabels(parsed.dayLabels, effectiveDays),
+  };
 }
 
 export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as AppState;
-      const days = toUniqueStringArray(parsed.days);
-      const effectiveDays = days.length > 0 ? days : DEFAULT_DAYS;
-      return {
-        activities: parsed.activities ?? [],
-        schedule: parsed.schedule ?? [],
-        timeSlots: parsed.timeSlots ?? DEFAULT_TIME_SLOTS,
-        days: effectiveDays,
-        dayLabels: normalizeDayLabels(parsed.dayLabels, effectiveDays),
-      };
+      return normalizeAppState(JSON.parse(raw));
     }
   } catch {
     // ignore corrupt data
@@ -49,7 +197,6 @@ export function loadState(): AppState {
   return {
     activities: [],
     schedule: [],
-    timeSlots: DEFAULT_TIME_SLOTS,
     days: DEFAULT_DAYS,
     dayLabels: DEFAULT_DAY_LABELS,
   };
@@ -89,7 +236,11 @@ export function loadFavorites(): Array<Favorite | null> {
             'data' in item &&
             typeof (item as { name: unknown }).name === 'string'
           ) {
-            result.push(item as Favorite);
+            const fav = item as { name: string; data: unknown };
+            result.push({
+              name: fav.name,
+              data: normalizeAppState(fav.data),
+            });
           } else {
             result.push(null);
           }

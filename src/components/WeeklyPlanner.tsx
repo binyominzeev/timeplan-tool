@@ -1,94 +1,231 @@
-import { useState } from 'react';
+import FullCalendar from '@fullcalendar/react';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import type { EventReceiveArg, EventResizeDoneArg } from '@fullcalendar/interaction';
+import type {
+  EventContentArg,
+  EventDropArg,
+  EventInput,
+  EventMountArg,
+} from '@fullcalendar/core';
 import type { Activity, DayKey, ScheduledEntry } from '../types';
-import { DEFAULT_FILL_WINDOWS, minutesToHoursString, totalWindowsMinutes } from '../utils/time';
-import { CalendarSlot } from './CalendarSlot';
+import { getCategoryColorSet } from '../utils/categoryColors';
+import { minutesToHoursString, parseTimeToMinutes } from '../utils/time';
 
 interface Props {
   activities: Activity[];
   schedule: ScheduledEntry[];
-  timeSlots: string[];
   days: DayKey[];
   dayLabels: Record<DayKey, string>;
+  snapMinutes: number;
   onRemoveEntry: (entryId: string) => void;
-  onShiftEntryLater: (entryId: string) => void;
-  onAddTimeSlot: (slot: string) => void;
+  onUpdateEntryTime: (entryId: string, day: DayKey, startTime: string, endTime: string) => void;
+  onCreateEntry: (activityId: string, day: DayKey, startTime: string, endTime: string) => boolean;
   onAddDay: (label: string) => void;
   onRemoveDay: (day: DayKey) => void;
+}
+
+function getDateForIndex(index: number): string {
+  // Fixed reference week where Monday is 2026-01-05.
+  const safeIndex = Math.max(0, index);
+  const base = new Date('2026-01-05T00:00:00');
+  const d = new Date(base);
+  d.setDate(base.getDate() + safeIndex);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function timeFromDate(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function getReferenceNow(dayCount: number): Date {
+  const current = new Date();
+  const jsDay = current.getDay();
+  const mondayBasedIndex = (jsDay + 6) % 7;
+  const mappedIndex = Math.min(Math.max(0, mondayBasedIndex), Math.max(0, dayCount - 1));
+  const reference = new Date(`${getDateForIndex(mappedIndex)}T00:00:00`);
+  reference.setHours(current.getHours(), current.getMinutes(), current.getSeconds(), current.getMilliseconds());
+  return reference;
+}
+
+function dateKeyFromDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function formatEventRange(start: Date | null, end: Date | null): string {
+  if (!start || !end) return '';
+  return `${timeFromDate(start)}-${timeFromDate(end)}`;
+}
+
+function normalizeClock(value: string): string {
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{1,2}))?$/);
+  if (!match) return '09:00';
+  const hh = Math.max(0, Math.min(23, Number(match[1])));
+  const mm = Math.max(0, Math.min(59, Number(match[2] ?? '0')));
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function plusMinutes(date: Date, minutes: number): Date {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function minutesToDurationString(minutes: number): string {
+  const safeMinutes = Math.max(5, Math.round(minutes));
+  return `00:${String(safeMinutes).padStart(2, '0')}:00`;
+}
+
+function dayFromDate(date: Date, dayColumns: { day: DayKey; label: string; date: string }[]): DayKey | undefined {
+  const target = dateKeyFromDate(date);
+  return dayColumns.find((column) => column.date === target)?.day;
 }
 
 export function WeeklyPlanner({
   activities,
   schedule,
-  timeSlots,
   days,
   dayLabels,
+  snapMinutes,
   onRemoveEntry,
-  onShiftEntryLater,
-  onAddTimeSlot,
+  onUpdateEntryTime,
+  onCreateEntry,
   onAddDay,
   onRemoveDay,
 }: Props) {
-  const [newSlot, setNewSlot] = useState('');
-  const [addingSlot, setAddingSlot] = useState(false);
-  const [pendingDeleteDay, setPendingDeleteDay] = useState<DayKey | null>(null);
+  const dayColumns = days.map((day, index) => ({
+    day,
+    label: dayLabels[day] ?? day,
+    date: getDateForIndex(index),
+  }));
 
-  const handleAddSlot = () => {
-    const raw = newSlot.trim();
-    const parsed = parseFlexibleTime(raw);
-    const val = parsed ?? raw;
-    if (val && !timeSlots.includes(val)) {
-      onAddTimeSlot(val);
-    }
-    setNewSlot('');
-    setAddingSlot(false);
-  };
+  const events: EventInput[] = schedule
+    .map((entry) => {
+      const activity = activities.find((a) => a.id === entry.activityId);
 
-  function parseFlexibleTime(input: string): string | null {
-    const s = input.trim().toLowerCase();
-    if (!s) return null;
+      const date = dayColumns.find((column) => column.day === entry.day)?.date ?? dayColumns[0]?.date ?? getDateForIndex(0);
+      const startTime = normalizeClock(entry.startTime ?? entry.timeSlot);
+      const durationMinutes = Math.max(15, activity?.dailyMinutes ?? 60);
+      const endTime =
+        (entry.endTime ? normalizeClock(entry.endTime) : undefined) ??
+        `${String(Math.floor((parseTimeToMinutes(startTime) + durationMinutes) / 60) % 24).padStart(2, '0')}:${String((parseTimeToMinutes(startTime) + durationMinutes) % 60).padStart(2, '0')}`;
 
-    // Accept formats: '9', '9:00', '09:00', '9:00 am', '9am', '12:30pm'
-    const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
-    if (!m) return null;
-    let hh = Number(m[1]);
-    const mm = m[2] ? Number(m[2]) : 0;
-    const ampm = m[3] ? m[3].toLowerCase() : null;
-    if (mm < 0 || mm > 59) return null;
-    if (ampm) {
-      if (hh === 12 && ampm === 'am') hh = 0;
-      else if (ampm === 'pm' && hh < 12) hh += 12;
-    }
-    if (hh < 0 || hh > 23) return null;
-    const hhStr = String(hh).padStart(2, '0');
-    const mmStr = String(mm).padStart(2, '0');
-    return `${hhStr}:${mmStr}`;
-  }
+      return {
+        id: entry.id,
+        title: activity?.name ?? `Unknown activity (${entry.activityId.slice(0, 6)})`,
+        start: `${date}T${startTime}:00`,
+        end: `${date}T${endTime}:00`,
+        extendedProps: {
+          day: entry.day,
+          activityId: entry.activityId,
+          category: activity?.category ?? 'Legacy',
+        },
+      } satisfies EventInput;
+    })
+    .filter(Boolean) as EventInput[];
 
-  // Stats per day
-  const minutesPerDay = (day: DayKey): number =>
-    schedule
-      .filter((e) => e.day === day)
-      .reduce((sum, e) => {
-        const act = activities.find((a) => a.id === e.activityId);
-        return sum + (act?.dailyMinutes ?? 0);
-      }, 0);
+  const totalWeeklyMinutes = schedule.reduce((sum, e) => {
+    const activity = activities.find((a) => a.id === e.activityId);
+    const start = parseTimeToMinutes(e.startTime ?? e.timeSlot);
+    const fallbackEnd = start + (activity?.dailyMinutes ?? 60);
+    const end = e.endTime ? parseTimeToMinutes(e.endTime) : fallbackEnd;
+    return sum + Math.max(0, end - start);
+  }, 0);
 
-  const totalWeeklyMinutes = days.reduce((sum, d) => sum + minutesPerDay(d), 0);
-  const windowTotal = totalWindowsMinutes(DEFAULT_FILL_WINDOWS);
-  const weeklyRemaining = Math.max(0, windowTotal * days.length - totalWeeklyMinutes);
-
-  const handleAddDay = () => {
-    const label = window.prompt('New day name (for example: Sunday):')?.trim();
-    if (!label) return;
-    onAddDay(label);
-  };
-
-  const handleRemoveDay = (day: DayKey) => {
-    if (days.length <= 1) {
-      alert('At least one day must remain.');
+  const handleEventDrop = (arg: EventDropArg) => {
+    const event = arg.event;
+    const start = event.start;
+    const end = event.end;
+    if (!start || !end) {
+      arg.revert();
       return;
     }
-    setPendingDeleteDay(day);
+
+    const day = dayFromDate(start, dayColumns);
+    if (!day) {
+      arg.revert();
+      return;
+    }
+
+    onUpdateEntryTime(event.id, day, timeFromDate(start), timeFromDate(end));
+  };
+
+  const handleEventResize = (arg: EventResizeDoneArg) => {
+    const event = arg.event;
+    const start = event.start;
+    const end = event.end;
+    if (!start || !end) {
+      arg.revert();
+      return;
+    }
+
+    const day = dayFromDate(start, dayColumns);
+    if (!day) {
+      arg.revert();
+      return;
+    }
+
+    onUpdateEntryTime(event.id, day, timeFromDate(start), timeFromDate(end));
+  };
+
+  const handleExternalReceive = (arg: EventReceiveArg) => {
+    const event = arg.event;
+    const start = event.start;
+    const rawEnd = event.end;
+    const rawActivityId = String(event.extendedProps.activityId ?? '');
+
+    if (!start) {
+      arg.revert();
+      return;
+    }
+
+    const day = dayFromDate(start, dayColumns);
+    if (!day) {
+      arg.revert();
+      return;
+    }
+
+    const activity = activities.find((a) => a.id === rawActivityId)
+      ?? activities.find((a) => a.name === event.title);
+    const activityId = activity?.id;
+    if (!activityId) {
+      arg.revert();
+      return;
+    }
+
+    const fallbackMinutes = Math.max(15, activity?.dailyMinutes ?? 60);
+    const end = rawEnd ?? plusMinutes(start, fallbackMinutes);
+
+    const created = onCreateEntry(activityId, day, timeFromDate(start), timeFromDate(end));
+    if (!created) {
+      arg.revert();
+      return;
+    }
+
+    // Remove the temporary event inserted by external drag, since app state is source-of-truth.
+    arg.event.remove();
+  };
+
+  const renderEventContent = (arg: EventContentArg) => {
+    const category = String(arg.event.extendedProps.category ?? '');
+    const colors = getCategoryColorSet(category);
+    const timeRange = formatEventRange(arg.event.start, arg.event.end);
+    return (
+      <div className={`h-full rounded-md border px-1.5 py-1 text-[11px] leading-tight shadow-sm ${colors.event}`}>
+        <div className="font-semibold truncate">{arg.event.title}</div>
+        {timeRange && <div className="truncate text-[10px] font-medium" style={{ color: colors.eventStyle.accent }}>{timeRange}</div>}
+        {category && <div className="truncate text-[10px] opacity-85 uppercase tracking-wide">{category}</div>}
+      </div>
+    );
+  };
+
+  const handleEventMount = (arg: EventMountArg) => {
+    const category = String(arg.event.extendedProps.category ?? '');
+    const colors = getCategoryColorSet(category);
+    arg.el.style.backgroundColor = colors.eventStyle.background;
+    arg.el.style.borderColor = colors.eventStyle.border;
+    arg.el.style.color = colors.eventStyle.text;
   };
 
   return (
@@ -96,158 +233,93 @@ export function WeeklyPlanner({
       <div className="hidden print:block px-4 pt-4 text-sm font-semibold text-gray-700">
         Weekly schedule
       </div>
-      {/* Week-level stats bar */}
+
       <div className="hidden sm:flex items-center gap-4 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50 print:flex print:bg-white">
         <span className="font-semibold text-gray-600">Weekly total:</span>
         <span>{minutesToHoursString(totalWeeklyMinutes)}</span>
         <span>·</span>
         <span>{schedule.length} sessions</span>
         <span>·</span>
-        <span className="text-gray-500">Kitölthető: {DEFAULT_FILL_WINDOWS.map(w=>`${w.start}-${w.end}`).join(', ')} ({minutesToHoursString(windowTotal)} / nap)</span>
-        <span>·</span>
-        <span className="text-orange-500">Heti szabad: {minutesToHoursString(weeklyRemaining)}</span>
+        <button
+          type="button"
+          onClick={() => {
+            const label = window.prompt('New day name (for example: Sunday):')?.trim();
+            if (!label) return;
+            onAddDay(label);
+          }}
+          className="print:hidden text-xs text-gray-500 hover:text-emerald-600 transition-colors cursor-pointer"
+        >
+          + Add day
+        </button>
       </div>
 
-      <div className="flex-1 overflow-auto print:overflow-visible">
-        <table className="w-full border-collapse text-sm print:text-xs">
-          <thead>
-            <tr className="bg-gray-50 sticky top-0 z-10 print:static print:bg-white">
-              <th className="w-16 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-r border-gray-200 px-2 py-2">
-                Time
-              </th>
-              {days.map((day) => (
-                  <th
-                  key={day}
-                  className="text-center text-xs font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 px-2 py-2"
+      <div className="flex-1 overflow-auto print:overflow-visible p-2">
+        <FullCalendar
+          plugins={[timeGridPlugin, interactionPlugin]}
+          initialView="customTimeGrid"
+          views={{
+            customTimeGrid: {
+              type: 'timeGrid',
+              duration: { days: Math.max(1, dayColumns.length) },
+            },
+          }}
+          initialDate={dayColumns[0]?.date ?? getDateForIndex(0)}
+          headerToolbar={false}
+          allDaySlot={false}
+          now={() => getReferenceNow(dayColumns.length)}
+          nowIndicator
+          editable
+          droppable
+          eventOverlap
+          slotDuration="00:15:00"
+          snapDuration={minutesToDurationString(snapMinutes)}
+          slotLabelInterval="01:00:00"
+          slotMinTime="00:00:00"
+          slotMaxTime="24:00:00"
+          scrollTime="08:00:00"
+          height="100%"
+          dayHeaderContent={(args) => {
+            const key = dayColumns.find((column) => column.date === dateKeyFromDate(args.date))?.day;
+            if (!key) return args.text;
+            return (
+              <div className="flex items-center justify-center gap-1">
+                <span>{dayLabels[key] ?? key}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (days.length <= 1) {
+                      alert('At least one day must remain.');
+                      return;
+                    }
+                    onRemoveDay(key);
+                  }}
+                  className="print:hidden text-[10px] font-bold text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
+                  title={`Delete ${(dayLabels[key] ?? key)}`}
                 >
-                  <div className="flex items-center justify-center gap-2">
-                    <span>{dayLabels[day] ?? day}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveDay(day)}
-                      className="print:hidden text-[10px] font-bold text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
-                      title={`Delete ${(dayLabels[day] ?? day)}`}
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div className="text-gray-400 font-normal text-xs">
-                    {minutesToHoursString(Math.max(0, totalWindowsMinutes(DEFAULT_FILL_WINDOWS) - minutesPerDay(day)))} szabad
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {timeSlots.map((slot) => (
-              <tr key={slot} className="border-b border-gray-100">
-                <td className="text-xs text-gray-400 font-mono border-r border-gray-200 px-2 py-1 align-top whitespace-nowrap">
-                  {slot}
-                </td>
-                {days.map((day) => {
-                  const entries = schedule.filter(
-                    (e) => e.day === day && e.timeSlot === slot,
-                  );
-                  return (
-                    <td
-                      key={day}
-                      className="border-r border-gray-100 px-1 py-1 align-top"
-                    >
-                      <CalendarSlot
-                        day={day}
-                        timeSlot={slot}
-                        entries={entries}
-                        activities={activities}
-                        onRemoveEntry={onRemoveEntry}
-                        onShiftEntryLater={onShiftEntryLater}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-
-            {/* Add slot row */}
-            <tr className="print:hidden">
-              <td colSpan={days.length + 1} className="px-2 py-1.5">
-                {addingSlot ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newSlot}
-                      onChange={(e) => setNewSlot(e.target.value)}
-                      className="border border-gray-300 rounded px-2 py-1 text-xs"
-                      autoFocus
-                      placeholder="09:00 or 9:00 AM"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddSlot();
-                        if (e.key === 'Escape') setAddingSlot(false);
-                      }}
-                    />
-                    <button
-                      onClick={handleAddSlot}
-                      className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded cursor-pointer"
-                    >
-                      Add
-                    </button>
-                    <button
-                      onClick={() => setAddingSlot(false)}
-                      className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => setAddingSlot(true)}
-                      className="text-xs text-gray-400 hover:text-blue-500 flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      + Add time slot
-                    </button>
-                    <button
-                      onClick={handleAddDay}
-                      className="text-xs text-gray-400 hover:text-emerald-600 flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      + Add day
-                    </button>
-                  </div>
-                )}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                  ×
+                </button>
+              </div>
+            );
+          }}
+          events={events}
+          eventContent={renderEventContent}
+          eventDidMount={handleEventMount}
+          eventDrop={handleEventDrop}
+          eventResize={handleEventResize}
+          eventReceive={handleExternalReceive}
+          eventClick={(arg) => {
+            const confirmed = window.confirm(`Delete "${arg.event.title}"?`);
+            if (!confirmed) return;
+            onRemoveEntry(arg.event.id);
+          }}
+          eventDataTransform={(input) => ({
+            ...input,
+            duration: input.end ? undefined : '01:00',
+          })}
+          dropAccept=".tp-backlog-draggable"
+        />
       </div>
-
-      {pendingDeleteDay && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-900/30 px-4 print:hidden">
-          <div className="w-full max-w-sm rounded-xl bg-white border border-gray-200 shadow-lg p-4">
-            <p className="text-sm font-semibold text-gray-800">Delete day</p>
-            <p className="mt-2 text-xs text-gray-500">
-              Delete "{dayLabels[pendingDeleteDay] ?? pendingDeleteDay}" and all entries scheduled in it?
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setPendingDeleteDay(null)}
-                className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onRemoveDay(pendingDeleteDay);
-                  setPendingDeleteDay(null);
-                }}
-                className="text-xs px-3 py-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white cursor-pointer"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

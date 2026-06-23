@@ -1,5 +1,5 @@
-import { useDraggable } from '@dnd-kit/core';
 import type { Activity, ScheduledEntry } from '../types';
+import { getCategoryColorSet } from '../utils/categoryColors';
 
 interface Props {
   activity: Activity;
@@ -23,29 +23,20 @@ export function ActivityCard({
   onEdit,
   timeRangeLabel,
 }: Props) {
-  const draggableId = inSlot && slotEntryId ? `slot:${slotEntryId}` : `activity:${activity.id}`;
-
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: draggableId,
-    data: { activityId: activity.id, slotEntryId: inSlot ? slotEntryId : undefined },
-  });
-
   const scheduled = schedule.filter((e) => e.activityId === activity.id).length;
   const target = activity.weeklyCount ?? 0;
   const remaining = Math.max(0, target - scheduled);
+  const categoryColors = getCategoryColorSet(activity.category);
 
   const progressPct = target > 0 ? Math.min(100, (scheduled / target) * 100) : 0;
   const isComplete = target > 0 && scheduled >= target;
 
   return (
     <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
       className={[
         'group relative bg-white border rounded-lg p-2.5 cursor-grab shadow-sm select-none',
         'transition-all duration-150',
-        isDragging ? 'opacity-40 shadow-lg scale-105' : 'hover:shadow-md hover:border-blue-300',
+        'hover:shadow-md hover:border-blue-300',
         isComplete ? 'border-green-300 bg-green-50' : 'border-gray-200',
         inSlot ? 'text-xs' : 'text-sm',
       ].join(' ')}
@@ -94,9 +85,18 @@ export function ActivityCard({
         </button>
       )}
 
-      <p className={`font-semibold leading-tight text-gray-800 ${inSlot ? 'pr-3' : ''}`}>
-        {activity.name}
-      </p>
+      <div className={`flex items-start gap-2 ${inSlot ? 'pr-3' : 'pr-5'}`}>
+        <p className="min-w-0 flex-1 font-semibold leading-tight text-gray-800">
+          {activity.name}
+        </p>
+        {activity.category && !inSlot && (
+          <span
+            className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${categoryColors.badge}`}
+          >
+            {activity.category}
+          </span>
+        )}
+      </div>
 
       <div className="flex items-center gap-2 mt-1 text-gray-500">
         {inSlot && timeRangeLabel && (
