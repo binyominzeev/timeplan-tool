@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -23,6 +24,7 @@ interface Props {
   onCreateEntry: (activityId: string, day: DayKey, startTime: string, endTime: string) => boolean;
   onAddDay: (label: string) => void;
   onRemoveDay: (day: DayKey) => void;
+  zoomMinutes: number;
 }
 
 function getDateForIndex(index: number): string {
@@ -88,12 +90,64 @@ export function WeeklyPlanner({
   days,
   dayLabels,
   snapMinutes,
+  zoomMinutes,
   onRemoveEntry,
   onUpdateEntryTime,
   onCreateEntry,
   onAddDay,
   onRemoveDay,
 }: Props) {
+  const plannerContainerRef = useRef<HTMLDivElement>(null);
+
+  const centerNowIndicatorInView = () => {
+    const root = plannerContainerRef.current;
+    if (!root) return;
+
+    const scrollerCandidates = Array.from(root.querySelectorAll<HTMLElement>('.fc-scroller'))
+      .filter((element) => element.scrollHeight > element.clientHeight + 20);
+    const scroller =
+      scrollerCandidates.find((element) => element.closest('.fc-timegrid'))
+      ?? scrollerCandidates[0]
+      ?? null;
+    const nowLine = root.querySelector<HTMLElement>('.fc-timegrid-now-indicator-line');
+
+    if (!scroller || !nowLine) return;
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const lineRect = nowLine.getBoundingClientRect();
+    const lineOffsetInScroll = lineRect.top - scrollerRect.top + scroller.scrollTop;
+    const targetScrollTop = Math.max(0, lineOffsetInScroll - scroller.clientHeight / 2);
+
+    // Use immediate scrolling so repeated zoom clicks do not queue smooth animations.
+    scroller.scrollTo({ top: targetScrollTop, behavior: 'auto' });
+  };
+
+  useEffect(() => {
+    // Wait for FullCalendar layout updates caused by zoom change, then recenter.
+    let frame2 = 0;
+    let timeoutId = 0;
+    const frame1 = window.requestAnimationFrame(() => {
+      frame2 = window.requestAnimationFrame(() => {
+        centerNowIndicatorInView();
+
+        // A short delayed pass makes repeated rapid zoom clicks more stable.
+        timeoutId = window.setTimeout(() => {
+          centerNowIndicatorInView();
+        }, 100);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame1);
+      if (frame2) {
+        window.cancelAnimationFrame(frame2);
+      }
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [zoomMinutes]);
+
   const dayColumns = days.map((day, index) => ({
     day,
     label: dayLabels[day] ?? day,
@@ -253,7 +307,7 @@ export function WeeklyPlanner({
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto print:overflow-visible p-2">
+      <div ref={plannerContainerRef} className="flex-1 overflow-auto print:overflow-visible p-2">
         <FullCalendar
           plugins={[timeGridPlugin, interactionPlugin]}
           initialView="customTimeGrid"
@@ -271,9 +325,12 @@ export function WeeklyPlanner({
           editable
           droppable
           eventOverlap
-          slotDuration="00:15:00"
+          slotDuration={minutesToDurationString(zoomMinutes)}
           snapDuration={minutesToDurationString(snapMinutes)}
-          slotLabelInterval="01:00:00"
+          slotLabelInterval={
+            // Choose a sensible label interval based on zoom level
+            zoomMinutes <= 5 ? '00:15:00' : zoomMinutes <= 15 ? '00:30:00' : '01:00:00'
+          }
           slotMinTime="00:00:00"
           slotMaxTime="24:00:00"
           scrollTime="08:00:00"

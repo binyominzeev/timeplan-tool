@@ -2,6 +2,17 @@ import type { AppState } from '../types';
 import { DEFAULT_DAYS, DEFAULT_DAY_LABELS } from '../types';
 
 const STORAGE_KEY = 'timeplan_state';
+const UI_VISIBILITY_KEY = 'timeplan_ui_visibility';
+
+export interface UiVisibilityState {
+  showProgressPanel: boolean;
+  showActivities: boolean;
+}
+
+const DEFAULT_UI_VISIBILITY: UiVisibilityState = {
+  showProgressPanel: true,
+  showActivities: true,
+};
 
 function toUniqueStringArray(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
@@ -205,6 +216,38 @@ export function loadState(): AppState {
 export function saveState(state: AppState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+export function loadUiVisibility(): UiVisibilityState {
+  try {
+    const raw = localStorage.getItem(UI_VISIBILITY_KEY);
+    if (!raw) return DEFAULT_UI_VISIBILITY;
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return DEFAULT_UI_VISIBILITY;
+
+    const source = parsed as Record<string, unknown>;
+    return {
+      showProgressPanel:
+        typeof source.showProgressPanel === 'boolean'
+          ? source.showProgressPanel
+          : DEFAULT_UI_VISIBILITY.showProgressPanel,
+      showActivities:
+        typeof source.showActivities === 'boolean'
+          ? source.showActivities
+          : DEFAULT_UI_VISIBILITY.showActivities,
+    };
+  } catch {
+    return DEFAULT_UI_VISIBILITY;
+  }
+}
+
+export function saveUiVisibility(state: UiVisibilityState): void {
+  try {
+    localStorage.setItem(UI_VISIBILITY_KEY, JSON.stringify(state));
   } catch {
     // ignore quota errors
   }

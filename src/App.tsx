@@ -3,13 +3,22 @@ import { Draggable } from '@fullcalendar/interaction';
 
 import type { Activity, AppState, DayKey } from './types';
 import { parseCSV } from './utils/csvParser';
-import { loadFavorites, loadState, normalizeAppState, saveFavorites, saveState } from './utils/storage';
+import {
+  loadFavorites,
+  loadState,
+  loadUiVisibility,
+  normalizeAppState,
+  saveFavorites,
+  saveState,
+  saveUiVisibility,
+} from './utils/storage';
 import type { Favorite } from './utils/storage';
 
 import { Backlog } from './components/Backlog';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
 import { ProgressPanel } from './components/ProgressPanel';
 import { CSVImport } from './components/CSVImport';
+import { ZOOM_CONFIG } from './config/zoomConfig';
 
 type SnapMinutes = 5 | 15;
 
@@ -19,16 +28,17 @@ function isTextInputTarget(target: EventTarget | null): boolean {
 }
 
 function App() {
+  const initialUiVisibility = loadUiVisibility();
   const [state, setState] = useState<AppState>(loadState);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const snapToastTimeoutRef = useRef<number | null>(null);
-  const [showProgressPanel, setShowProgressPanel] = useState(true);
-  const [showDesktopActivities, setShowDesktopActivities] = useState(true);
-  const [showMobileActivities, setShowMobileActivities] = useState(false);
+  const [showProgressPanel, setShowProgressPanel] = useState(initialUiVisibility.showProgressPanel);
+  const [showActivities, setShowActivities] = useState(initialUiVisibility.showActivities);
   const [menuOpen, setMenuOpen] = useState(false);
   const [favorites, setFavorites] = useState<Array<Favorite | null>>(loadFavorites);
   const [snapMinutes, setSnapMinutes] = useState<SnapMinutes>(15);
+  const [zoomMinutes, setZoomMinutes] = useState<number>(ZOOM_CONFIG.defaultMinutes);
   const [snapToast, setSnapToast] = useState<string | null>(null);
   const handlePrintSchedule = useCallback(() => window.print(), []);
 
@@ -57,6 +67,18 @@ function App() {
     });
     showSnapToast(nextSnapMinutes);
   }, [showSnapToast]);
+
+  const clampZoom = useCallback((next: number) => {
+    return Math.max(ZOOM_CONFIG.minMinutes, Math.min(ZOOM_CONFIG.maxMinutes, next));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setZoomMinutes((prev) => clampZoom(prev + ZOOM_CONFIG.stepMinutes));
+  }, [clampZoom]);
+
+  const zoomIn = useCallback(() => {
+    setZoomMinutes((prev) => clampZoom(prev - ZOOM_CONFIG.stepMinutes));
+  }, [clampZoom]);
 
   useEffect(() => {
     saveState(state);
@@ -106,7 +128,11 @@ function App() {
             const activityId = eventEl.getAttribute('data-activity-id');
             const title = eventEl.getAttribute('data-activity-title') ?? 'Activity';
             const rawDuration = Number(eventEl.getAttribute('data-duration-minutes') ?? '60');
-            const durationMinutes = Math.max(15, Math.round(rawDuration / 15) * 15);
+            // Round duration to nearest configured step and enforce configured minimum
+            const durationMinutes = Math.max(
+              ZOOM_CONFIG.minMinutes,
+              Math.round(rawDuration / ZOOM_CONFIG.stepMinutes) * ZOOM_CONFIG.stepMinutes,
+            );
             const hours = Math.floor(durationMinutes / 60);
             const mins = durationMinutes % 60;
 
@@ -124,7 +150,11 @@ function App() {
     return () => {
       draggables.forEach((draggable) => draggable.destroy());
     };
-  }, [state.activities, showDesktopActivities, showMobileActivities]);
+  }, [state.activities, showActivities]);
+
+  useEffect(() => {
+    saveUiVisibility({ showProgressPanel, showActivities });
+  }, [showProgressPanel, showActivities]);
 
   const handleCSVFile = useCallback((text: string) => {
     const imported = parseCSV(text);
@@ -363,6 +393,30 @@ function App() {
         <span className="hidden sm:inline text-gray-300">|</span>
         <span className="hidden sm:inline text-sm text-gray-500">Weekly time planner</span>
         <div className="ml-auto flex items-center gap-2">
+          {/* Zoom controls for calendar slot duration */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={zoomIn}
+              title={`Zoom in (decrease slot duration) — min ${ZOOM_CONFIG.minMinutes} min`}
+              className="text-xs bg-white hover:bg-gray-50 text-gray-700 px-2 py-1 rounded-md border border-gray-200 shadow-sm transition-colors cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <div className="text-xs text-gray-600 px-2 py-1">{zoomMinutes} min</div>
+            <button
+              type="button"
+              onClick={zoomOut}
+              title={`Zoom out (increase slot duration) — max ${ZOOM_CONFIG.maxMinutes} min`}
+              className="text-xs bg-white hover:bg-gray-50 text-gray-700 px-2 py-1 rounded-md border border-gray-200 shadow-sm transition-colors cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+              </svg>
+            </button>
+          </div>
           {state.activities.length > 0 && (
             <span className="hidden sm:inline text-xs text-gray-400">
               {state.activities.length} activities · {state.schedule.length} sessions scheduled
@@ -502,7 +556,7 @@ function App() {
       )}
 
       <div className="relative flex flex-1 overflow-hidden print:block print:overflow-visible">
-        <div className={`${showDesktopActivities ? 'hidden sm:flex' : 'hidden'} w-64 shrink-0 overflow-hidden flex-col print:hidden`}>
+        <div className={`${showActivities ? 'hidden sm:flex' : 'hidden'} w-64 shrink-0 overflow-hidden flex-col print:hidden`}>
           <Backlog
             activities={state.activities}
             schedule={state.schedule}
@@ -511,14 +565,14 @@ function App() {
           />
         </div>
 
-        {showMobileActivities && (
+        {showActivities && (
           <div className="sm:hidden absolute inset-0 z-30 bg-gray-900/30 print:hidden">
             <div className="h-full w-[88%] max-w-sm bg-white shadow-xl">
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200">
                 <p className="text-sm font-semibold text-gray-700">Activities</p>
                 <button
                   type="button"
-                  onClick={() => setShowMobileActivities(false)}
+                  onClick={() => setShowActivities(false)}
                   className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
                 >
                   Close
@@ -543,6 +597,7 @@ function App() {
             days={state.days}
             dayLabels={state.dayLabels}
             snapMinutes={snapMinutes}
+            zoomMinutes={zoomMinutes}
             onRemoveEntry={removeEntry}
             onUpdateEntryTime={updateEntryTime}
             onCreateEntry={createEntry}
@@ -581,17 +636,17 @@ function App() {
           </button>
           <button
             type="button"
-            onClick={() => setShowMobileActivities((prev) => !prev)}
+            onClick={() => setShowActivities((prev) => !prev)}
             className="sm:hidden text-xs bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-md shadow-sm transition-colors cursor-pointer"
           >
-            {showMobileActivities ? 'Hide Activities' : 'Show Activities'}
+            {showActivities ? 'Hide Activities' : 'Show Activities'}
           </button>
           <button
             type="button"
-            onClick={() => setShowDesktopActivities((prev) => !prev)}
+            onClick={() => setShowActivities((prev) => !prev)}
             className="hidden sm:inline-flex text-xs bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-md shadow-sm transition-colors cursor-pointer"
           >
-            {showDesktopActivities ? 'Hide Activities' : 'Show Activities'}
+            {showActivities ? 'Hide Activities' : 'Show Activities'}
           </button>
         </div>
       </div>
