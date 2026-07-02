@@ -9,6 +9,7 @@ interface Props {
   schedule: ScheduledEntry[];
   onAddActivity: (activity: ActivityInput) => void;
   onUpdateActivity: (activityId: string, activity: ActivityInput) => void;
+  onRemoveActivity: (activityId: string) => void;
 }
 
 interface FormState {
@@ -52,6 +53,7 @@ export function Backlog({
   schedule,
   onAddActivity,
   onUpdateActivity,
+  onRemoveActivity,
 }: Props) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
@@ -113,6 +115,15 @@ export function Backlog({
       onAddActivity(payload);
     }
 
+    closeDialog();
+  };
+
+  const handleRemove = () => {
+    if (!editingActivityId) return;
+    const confirmed = window.confirm('Remove this activity and all scheduled sessions?');
+    if (!confirmed) return;
+
+    onRemoveActivity(editingActivityId);
     closeDialog();
   };
 
@@ -266,7 +277,18 @@ export function Backlog({
                 />
               </label>
 
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="flex items-center justify-between gap-2 pt-1">
+                {isEditMode ? (
+                  <button
+                    type="button"
+                    onClick={handleRemove}
+                    className="text-xs px-3 py-1.5 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <span />
+                )}
                 <button
                   type="button"
                   onClick={closeDialog}

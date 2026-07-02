@@ -358,6 +358,14 @@ function App() {
     }));
   }, []);
 
+  const removeActivity = useCallback((activityId: string) => {
+    setState((prev) => ({
+      ...prev,
+      activities: prev.activities.filter((activity) => activity.id !== activityId),
+      schedule: prev.schedule.filter((entry) => entry.activityId !== activityId),
+    }));
+  }, []);
+
   const handleSaveToFavorite = useCallback(
     (index: number) => {
       const current = favorites[index];
@@ -562,6 +570,7 @@ function App() {
             schedule={state.schedule}
             onAddActivity={addActivity}
             onUpdateActivity={updateActivity}
+            onRemoveActivity={removeActivity}
           />
         </div>
 
@@ -584,6 +593,7 @@ function App() {
                   schedule={state.schedule}
                   onAddActivity={addActivity}
                   onUpdateActivity={updateActivity}
+                  onRemoveActivity={removeActivity}
                 />
               </div>
             </div>
