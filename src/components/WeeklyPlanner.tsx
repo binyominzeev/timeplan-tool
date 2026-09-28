@@ -16,6 +16,8 @@ import { minutesToHoursString, parseTimeToMinutes } from '../utils/time';
 interface Props {
   activities: Activity[];
   schedule: ScheduledEntry[];
+  viewMode: 'weekly' | 'daily';
+  onChangeViewMode: (viewMode: 'weekly' | 'daily') => void;
   days: DayKey[];
   dayLabels: Record<DayKey, string>;
   snapMinutes: number;
@@ -43,8 +45,9 @@ function timeFromDate(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-function getReferenceNow(dayCount: number): Date {
+function getReferenceNow(dayCount: number, viewMode: 'weekly' | 'daily'): Date {
   const current = new Date();
+  if (viewMode === 'daily') return current;
   const jsDay = current.getDay();
   const mondayBasedIndex = (jsDay + 6) % 7;
   const mappedIndex = Math.min(Math.max(0, mondayBasedIndex), Math.max(0, dayCount - 1));
@@ -87,6 +90,8 @@ function dayFromDate(date: Date, dayColumns: { day: DayKey; label: string; date:
 export function WeeklyPlanner({
   activities,
   schedule,
+  viewMode,
+  onChangeViewMode,
   days,
   dayLabels,
   snapMinutes,
@@ -151,7 +156,7 @@ export function WeeklyPlanner({
   const dayColumns = days.map((day, index) => ({
     day,
     label: dayLabels[day] ?? day,
-    date: getDateForIndex(index),
+    date: viewMode === 'daily' ? dateKeyFromDate(new Date()) : getDateForIndex(index),
   }));
 
   const events: EventInput[] = schedule
@@ -285,30 +290,53 @@ export function WeeklyPlanner({
   return (
     <div className="relative flex flex-col h-full bg-white">
       <div className="hidden print:block px-4 pt-4 text-sm font-semibold text-gray-700">
-        Weekly schedule
+        {viewMode === 'daily' ? 'Daily schedule' : 'Weekly schedule'}
       </div>
 
-      <div className="hidden sm:flex items-center gap-4 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50 print:flex print:bg-white">
-        <span className="font-semibold text-gray-600">Weekly total:</span>
+      <div className="flex items-center gap-3 px-3 sm:px-4 py-2 border-b border-gray-200 text-xs text-gray-500 bg-gray-50 print:hidden">
+        <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5" role="group" aria-label="Terv nézet">
+          <button
+            type="button"
+            onClick={() => onChangeViewMode('weekly')}
+            aria-pressed={viewMode === 'weekly'}
+            className={`rounded px-2.5 py-1.5 font-medium transition-colors cursor-pointer ${viewMode === 'weekly' ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            Heti rend
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeViewMode('daily')}
+            aria-pressed={viewMode === 'daily'}
+            className={`rounded px-2.5 py-1.5 font-medium transition-colors cursor-pointer ${viewMode === 'daily' ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            Mai nap
+          </button>
+        </div>
+        <span className="hidden sm:inline font-semibold text-gray-600">
+          {viewMode === 'daily' ? 'Napi összesen:' : 'Heti összesen:'}
+        </span>
         <span>{minutesToHoursString(totalWeeklyMinutes)}</span>
         <span>·</span>
         <span>{schedule.length} sessions</span>
         <span>·</span>
-        <button
-          type="button"
-          onClick={() => {
-            const label = window.prompt('New day name (for example: Sunday):')?.trim();
-            if (!label) return;
-            onAddDay(label);
-          }}
-          className="print:hidden text-xs text-gray-500 hover:text-emerald-600 transition-colors cursor-pointer"
-        >
-          + Add day
-        </button>
+        {viewMode === 'weekly' && (
+          <button
+            type="button"
+            onClick={() => {
+              const label = window.prompt('New day name (for example: Sunday):')?.trim();
+              if (!label) return;
+              onAddDay(label);
+            }}
+            className="text-xs text-gray-500 hover:text-emerald-600 transition-colors cursor-pointer"
+          >
+            + Add day
+          </button>
+        )}
       </div>
 
       <div ref={plannerContainerRef} className="flex-1 overflow-auto print:overflow-visible p-2">
         <FullCalendar
+          key={`${viewMode}-${viewMode === 'daily' ? dayColumns[0]?.date ?? '' : ''}`}
           plugins={[timeGridPlugin, interactionPlugin]}
           initialView="customTimeGrid"
           views={{
@@ -320,7 +348,7 @@ export function WeeklyPlanner({
           initialDate={dayColumns[0]?.date ?? getDateForIndex(0)}
           headerToolbar={false}
           allDaySlot={false}
-          now={() => getReferenceNow(dayColumns.length)}
+          now={() => getReferenceNow(dayColumns.length, viewMode)}
           nowIndicator
           editable
           droppable
@@ -341,21 +369,23 @@ export function WeeklyPlanner({
             return (
               <div className="flex items-center justify-center gap-1">
                 <span>{dayLabels[key] ?? key}</span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (days.length <= 1) {
-                      alert('At least one day must remain.');
-                      return;
-                    }
-                    onRemoveDay(key);
-                  }}
-                  className="print:hidden text-[10px] font-bold text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
-                  title={`Delete ${(dayLabels[key] ?? key)}`}
-                >
-                  ×
-                </button>
+                {viewMode === 'weekly' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (days.length <= 1) {
+                        alert('At least one day must remain.');
+                        return;
+                      }
+                      onRemoveDay(key);
+                    }}
+                    className="print:hidden text-[10px] font-bold text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
+                    title={`Delete ${(dayLabels[key] ?? key)}`}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             );
           }}

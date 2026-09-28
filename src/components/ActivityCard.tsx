@@ -10,6 +10,8 @@ interface Props {
   onRemove?: (entryId: string) => void;
   onShiftLater?: (entryId: string) => void;
   onEdit?: () => void;
+  isStarred?: boolean;
+  onToggleStar?: () => void;
   timeRangeLabel?: string;
 }
 
@@ -21,6 +23,8 @@ export function ActivityCard({
   onRemove,
   onShiftLater,
   onEdit,
+  isStarred = false,
+  onToggleStar,
   timeRangeLabel,
 }: Props) {
   const scheduled = schedule.filter((e) => e.activityId === activity.id).length;
@@ -85,7 +89,26 @@ export function ActivityCard({
         </button>
       )}
 
-      <div className={`flex items-start gap-2 ${inSlot ? 'pr-3' : 'pr-5'}`}>
+      {!inSlot && onToggleStar && (
+        <button
+          type="button"
+          className={`absolute top-1 right-7 z-10 cursor-pointer print:hidden ${isStarred ? 'text-amber-500' : 'text-gray-300 hover:text-amber-500'}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleStar();
+          }}
+          title={isStarred ? 'Csillagozás eltávolítása' : 'Teendő csillagozása'}
+          aria-label={isStarred ? 'Csillagozás eltávolítása' : 'Teendő csillagozása'}
+          aria-pressed={isStarred}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill={isStarred ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z" />
+          </svg>
+        </button>
+      )}
+
+      <div className={`flex items-start gap-2 ${inSlot ? 'pr-3' : 'pr-12'}`}>
         <p className="min-w-0 flex-1 font-semibold leading-tight text-gray-800">
           {activity.name}
         </p>

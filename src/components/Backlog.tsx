@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { Activity, ScheduledEntry } from '../types';
 import { ActivityCard } from './ActivityCard';
 
@@ -7,9 +7,11 @@ type ActivityInput = Omit<Activity, 'id'>;
 interface Props {
   activities: Activity[];
   schedule: ScheduledEntry[];
+  starredActivityIds: string[];
   onAddActivity: (activity: ActivityInput) => void;
   onUpdateActivity: (activityId: string, activity: ActivityInput) => void;
   onRemoveActivity: (activityId: string) => void;
+  onToggleStar: (activityId: string) => void;
 }
 
 interface FormState {
@@ -51,16 +53,21 @@ function parseOptionalNumber(value: string): number | null {
 export function Backlog({
   activities,
   schedule,
+  starredActivityIds,
   onAddActivity,
   onUpdateActivity,
   onRemoveActivity,
+  onToggleStar,
 }: Props) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
   // Group activities by category
-  const categories = useMemo(() => Array.from(new Set(activities.map((a) => a.category))), [activities]);
+  const starredIds = new Set(starredActivityIds);
+  const starredActivities = activities.filter((activity) => starredIds.has(activity.id));
+  const unstarredActivities = activities.filter((activity) => !starredIds.has(activity.id));
+  const categories = Array.from(new Set(unstarredActivities.map((activity) => activity.category)));
 
   const unscheduledActivities = activities.filter((a) => {
     const scheduled = schedule.filter((e) => e.activityId === a.id).length;
@@ -72,6 +79,24 @@ export function Backlog({
     ? activities.find((activity) => activity.id === editingActivityId)
     : undefined;
   const isEditMode = Boolean(editingActivity);
+
+  const renderActivity = (activity: Activity) => (
+    <div
+      key={activity.id}
+      className="tp-backlog-draggable"
+      data-activity-id={activity.id}
+      data-activity-title={activity.name}
+      data-duration-minutes={activity.dailyMinutes ?? 60}
+    >
+      <ActivityCard
+        activity={activity}
+        schedule={schedule}
+        onEdit={() => openEditDialog(activity)}
+        isStarred={starredIds.has(activity.id)}
+        onToggleStar={() => onToggleStar(activity.id)}
+      />
+    </div>
+  );
 
   const openAddDialog = () => {
     setEditingActivityId(null);
@@ -155,8 +180,19 @@ export function Backlog({
             <span>{unscheduledActivities.length} not fully scheduled</span>
           </div>
 
+          {starredActivities.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 mb-1.5 px-0.5">
+                Csillagozott
+              </p>
+              <div className="space-y-2">
+                {starredActivities.map(renderActivity)}
+              </div>
+            </div>
+          )}
+
           {categories.map((cat) => {
-            const group = activities.filter((a) => a.category === cat);
+            const group = unstarredActivities.filter((activity) => activity.category === cat);
             return (
               <div key={cat}>
                 {cat && (
@@ -165,21 +201,7 @@ export function Backlog({
                   </p>
                 )}
                 <div className="space-y-2">
-                  {group.map((activity) => (
-                    <div
-                      key={activity.id}
-                      className="tp-backlog-draggable"
-                      data-activity-id={activity.id}
-                      data-activity-title={activity.name}
-                      data-duration-minutes={activity.dailyMinutes ?? 60}
-                    >
-                      <ActivityCard
-                        activity={activity}
-                        schedule={schedule}
-                        onEdit={() => openEditDialog(activity)}
-                      />
-                    </div>
-                  ))}
+                  {group.map(renderActivity)}
                 </div>
               </div>
             );

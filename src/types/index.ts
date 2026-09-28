@@ -33,6 +33,9 @@ export interface ScheduledEntry {
 export interface AppState {
   activities: Activity[];
   schedule: ScheduledEntry[];
+  dailySchedule: ScheduledEntry[];
+  dailyScheduleDate: string;
+  starredActivityIds: string[];
   days: DayKey[];
   dayLabels: Record<DayKey, string>;
 }

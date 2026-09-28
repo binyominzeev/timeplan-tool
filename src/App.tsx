@@ -21,6 +21,11 @@ import { CSVImport } from './components/CSVImport';
 import { ZOOM_CONFIG } from './config/zoomConfig';
 
 type SnapMinutes = 5 | 15;
+type PlannerViewMode = 'weekly' | 'daily';
+
+function getLocalDateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -30,6 +35,7 @@ function isTextInputTarget(target: EventTarget | null): boolean {
 function App() {
   const initialUiVisibility = loadUiVisibility();
   const [state, setState] = useState<AppState>(loadState);
+  const [viewMode, setViewMode] = useState<PlannerViewMode>('weekly');
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const snapToastTimeoutRef = useRef<number | null>(null);
@@ -83,6 +89,21 @@ function App() {
   useEffect(() => {
     saveState(state);
   }, [state]);
+
+  useEffect(() => {
+    const refreshDailySchedule = () => {
+      const today = getLocalDateKey();
+      setState((prev) => prev.dailyScheduleDate === today
+        ? prev
+        : { ...prev, dailySchedule: [], dailyScheduleDate: today });
+    };
+    const intervalId = window.setInterval(refreshDailySchedule, 60_000);
+    window.addEventListener('focus', refreshDailySchedule);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshDailySchedule);
+    };
+  }, []);
 
   useEffect(() => {
     saveFavorites(favorites);
@@ -166,6 +187,9 @@ function App() {
       ...prev,
       activities: imported,
       schedule: [],
+      dailySchedule: [],
+      dailyScheduleDate: getLocalDateKey(),
+      starredActivityIds: [],
     }));
   }, []);
 
@@ -256,17 +280,31 @@ function App() {
     event.target.value = '';
   };
 
+  const activeScheduleKey = viewMode === 'daily' ? 'dailySchedule' : 'schedule';
+
+  const updateActiveSchedule = useCallback((
+    updater: (schedule: AppState['schedule']) => AppState['schedule'],
+  ) => {
+    const today = getLocalDateKey();
+    setState((prev) => {
+      if (activeScheduleKey === 'schedule') {
+        return { ...prev, schedule: updater(prev.schedule) };
+      }
+      const currentDailySchedule = prev.dailyScheduleDate === today ? prev.dailySchedule : [];
+      return {
+        ...prev,
+        dailySchedule: updater(currentDailySchedule),
+        dailyScheduleDate: today,
+      };
+    });
+  }, [activeScheduleKey]);
+
   const removeEntry = useCallback((entryId: string) => {
-    setState((prev) => ({
-      ...prev,
-      schedule: prev.schedule.filter((e) => e.id !== entryId),
-    }));
-  }, []);
+    updateActiveSchedule((schedule) => schedule.filter((entry) => entry.id !== entryId));
+  }, [updateActiveSchedule]);
 
   const updateEntryTime = useCallback((entryId: string, day: DayKey, startTime: string, endTime: string) => {
-    setState((prev) => ({
-      ...prev,
-      schedule: prev.schedule.map((entry) =>
+    updateActiveSchedule((schedule) => schedule.map((entry) =>
         entry.id === entryId
           ? {
               ...entry,
@@ -276,18 +314,15 @@ function App() {
               endTime,
             }
           : entry,
-      ),
-    }));
-  }, []);
+        ));
+    }, [updateActiveSchedule]);
 
   const createEntry = useCallback((activityId: string, day: DayKey, startTime: string, endTime: string): boolean => {
     const exists = state.activities.some((a) => a.id === activityId);
     if (!exists) return false;
 
-    setState((prev) => ({
-      ...prev,
-      schedule: [
-        ...prev.schedule,
+    updateActiveSchedule((schedule) => [
+        ...schedule,
         {
           id: crypto.randomUUID(),
           activityId,
@@ -296,11 +331,10 @@ function App() {
           startTime,
           endTime,
         },
-      ],
-    }));
+      ]);
 
     return true;
-  }, [state.activities]);
+  }, [state.activities, updateActiveSchedule]);
 
   const addDay = useCallback(
     (label: string) => {
@@ -363,6 +397,17 @@ function App() {
       ...prev,
       activities: prev.activities.filter((activity) => activity.id !== activityId),
       schedule: prev.schedule.filter((entry) => entry.activityId !== activityId),
+      dailySchedule: prev.dailySchedule.filter((entry) => entry.activityId !== activityId),
+      starredActivityIds: prev.starredActivityIds.filter((id) => id !== activityId),
+    }));
+  }, []);
+
+  const toggleStar = useCallback((activityId: string) => {
+    setState((prev) => ({
+      ...prev,
+      starredActivityIds: prev.starredActivityIds.includes(activityId)
+        ? prev.starredActivityIds.filter((id) => id !== activityId)
+        : [...prev.starredActivityIds, activityId],
     }));
   }, []);
 
@@ -542,7 +587,14 @@ function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        setState((prev) => ({ ...prev, activities: [], schedule: [] }));
+                        setState((prev) => ({
+                          ...prev,
+                          activities: [],
+                          schedule: [],
+                          dailySchedule: [],
+                          dailyScheduleDate: getLocalDateKey(),
+                          starredActivityIds: [],
+                        }));
                         setMenuOpen(false);
                       }}
                       className="w-full text-left px-4 py-1.5 text-sm text-red-400 hover:bg-red-50 transition-colors cursor-pointer"
@@ -568,9 +620,11 @@ function App() {
           <Backlog
             activities={state.activities}
             schedule={state.schedule}
+            starredActivityIds={state.starredActivityIds}
             onAddActivity={addActivity}
             onUpdateActivity={updateActivity}
             onRemoveActivity={removeActivity}
+            onToggleStar={toggleStar}
           />
         </div>
 
@@ -591,9 +645,11 @@ function App() {
                 <Backlog
                   activities={state.activities}
                   schedule={state.schedule}
+                  starredActivityIds={state.starredActivityIds}
                   onAddActivity={addActivity}
                   onUpdateActivity={updateActivity}
                   onRemoveActivity={removeActivity}
+                  onToggleStar={toggleStar}
                 />
               </div>
             </div>
@@ -603,9 +659,13 @@ function App() {
         <div className="flex-1 overflow-hidden print:overflow-visible">
           <WeeklyPlanner
             activities={state.activities}
-            schedule={state.schedule}
-            days={state.days}
-            dayLabels={state.dayLabels}
+            schedule={activeScheduleKey === 'dailySchedule'
+              ? (state.dailyScheduleDate === getLocalDateKey() ? state.dailySchedule : [])
+              : state.schedule}
+            viewMode={viewMode}
+            onChangeViewMode={setViewMode}
+            days={viewMode === 'daily' ? ['Today'] : state.days}
+            dayLabels={viewMode === 'daily' ? { Today: 'Mai nap' } : state.dayLabels}
             snapMinutes={snapMinutes}
             zoomMinutes={zoomMinutes}
             onRemoveEntry={removeEntry}

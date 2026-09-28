@@ -55,6 +55,10 @@ function normalizeTimeString(raw: unknown, fallback: string): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+function getLocalDateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function normalizeSchedule(raw: unknown, days: string[]): {
   schedule: AppState['schedule'];
   legacyNames: Record<string, string>;
@@ -170,10 +174,17 @@ export function normalizeAppState(raw: unknown): AppState {
       return { id, name, category, dailyMinutes, weeklyHours, weeklyCount, notes };
     });
 
-  const { schedule, legacyNames } = normalizeSchedule(parsed.schedule, effectiveDays);
+  const { schedule, legacyNames: weeklyLegacyNames } = normalizeSchedule(parsed.schedule, effectiveDays);
+  const today = getLocalDateKey();
+  const dailyScheduleIsCurrent = parsed.dailyScheduleDate === today;
+  const { schedule: dailySchedule, legacyNames: dailyLegacyNames } = normalizeSchedule(
+    dailyScheduleIsCurrent ? parsed.dailySchedule : [],
+    ['Today'],
+  );
+  const legacyNames = { ...weeklyLegacyNames, ...dailyLegacyNames };
   const knownActivityIds = new Set(activities.map((activity) => activity.id));
 
-  const syntheticActivities = schedule
+  const syntheticActivities = [...schedule, ...dailySchedule]
     .filter((entry) => !knownActivityIds.has(entry.activityId))
     .map((entry, index) => ({
       id: entry.activityId,
@@ -187,10 +198,18 @@ export function normalizeAppState(raw: unknown): AppState {
     .filter((activity, index, arr) => arr.findIndex((item) => item.id === activity.id) === index);
 
   const mergedActivities = [...activities, ...syntheticActivities];
+  const mergedActivityIds = new Set(mergedActivities.map((activity) => activity.id));
+  const starredActivityIds = toUniqueStringArray(parsed.starredActivityIds)
+    .filter((activityId) => mergedActivityIds.has(activityId));
 
   return {
     activities: mergedActivities,
     schedule: remapScheduleActivityIds(schedule, mergedActivities),
+    dailySchedule: dailyScheduleIsCurrent
+      ? remapScheduleActivityIds(dailySchedule, mergedActivities)
+      : [],
+    dailyScheduleDate: today,
+    starredActivityIds,
     days: effectiveDays,
     dayLabels: normalizeDayLabels(parsed.dayLabels, effectiveDays),
   };
@@ -208,6 +227,9 @@ export function loadState(): AppState {
   return {
     activities: [],
     schedule: [],
+    dailySchedule: [],
+    dailyScheduleDate: getLocalDateKey(),
+    starredActivityIds: [],
     days: DEFAULT_DAYS,
     dayLabels: DEFAULT_DAY_LABELS,
   };

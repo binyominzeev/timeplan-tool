@@ -7,6 +7,8 @@ A single-page weekly time-planning application built with React, TypeScript, Vit
 - **CSV Import** — upload a CSV exported directly from your spreadsheet; category header rows are detected automatically
 - **Activity Backlog** — left panel listing all imported activities grouped by category, with duration and weekly-target details
 - **Weekly Time-Grid Planner** — Google Calendar-like weekly view with continuous timeline (00:00-24:00), scroll, and overlap support
+- **Daily Plan** — switch to a separate plan for today without changing the weekly schedule; it resets to an empty plan on a new date
+- **Starred Activities** — star backlog items to pin them above the category groups
 - **JSON Save/Load** — export the full ready schedule to a named JSON file on your machine, then import it back anytime
 - **Custom Days** — add or remove day columns (e.g. Sunday) the same way as managing time slots
 - **Drag-and-Drop** — powered by FullCalendar interaction plugin; drag backlog items into the calendar, move/resize events in 15-minute steps
