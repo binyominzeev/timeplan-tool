@@ -48,9 +48,7 @@ const isDirectExecution = process.env.pm_id !== undefined
   || (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href);
 
 if (isDirectExecution) {
-  const port = process.env.NODE_ENV === 'production'
-    ? Number(process.env.PORT || devPorts.api)
-    : devPorts.api;
+  const port = devPorts.api;
   const database = createDatabase(process.env.DATABASE_PATH || './data/timeplan.db');
   createApp({ database }).listen(port, '127.0.0.1', () => {
     console.log(`API listening on 127.0.0.1:${port}`);

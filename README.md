@@ -101,7 +101,7 @@ the Pocket ID redirect URI and the matching `OIDC_REDIRECT_URI` and
 	config sets its own working directory, so no `--cwd` is needed). The Express process serves both `dist/` at `/` and the
 	API at `/api`.
 - Put that one process behind an HTTPS reverse proxy, forwarding both `/api/`
-	and `/` to `127.0.0.1:4001`. The Node server intentionally does not
+	and `/` to `127.0.0.1:<api port from dev-ports.json>`. The Node server intentionally does not
 	bind to a public interface. The PM2 config uses one forked instance.
 - Back up the SQLite database regularly and keep its containing directory
 	persistent across deployments.
