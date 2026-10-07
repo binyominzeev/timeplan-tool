@@ -29,12 +29,7 @@ export function createApp({ database, authenticate, webDistPath = defaultWebDist
   app.use(express.urlencoded({ extended: false, limit: '10kb' }));
   app.use('/api', createRoutes({ database, authenticate }));
   if (fs.existsSync(webDistPath)) {
-    app.get('/', (req, res) => res.redirect(308, '/timeplan/'));
-    app.get('/timeplan', (req, res, next) => {
-      if (req.path === '/timeplan') return res.redirect(308, '/timeplan/');
-      return next();
-    });
-    app.use('/timeplan', express.static(webDistPath));
+    app.use(express.static(webDistPath));
   }
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);

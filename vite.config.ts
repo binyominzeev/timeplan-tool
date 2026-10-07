@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     : `http://localhost:${devPorts.api}`
 
   return {
-    base: '/timeplan/',
+    base: '/',
     plugins: [react(), tailwindcss()],
     server: {
       port: devPorts.frontend,

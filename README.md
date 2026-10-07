@@ -33,7 +33,7 @@ npm install
 ```
 
 For the planner, run `npm run dev` and open
-[http://localhost:5173/timeplan/](http://localhost:5173/timeplan/).
+[http://localhost:5173/](http://localhost:5173/).
 
 ## Build
 
@@ -58,7 +58,7 @@ the Pocket ID redirect URI and the matching `OIDC_REDIRECT_URI` and
 `CORS_ORIGIN` values in `server/.env`.
 
 1. Configure the Pocket ID client to allow this redirect URI exactly:
-	 `http://localhost:5173/timeplan/`
+	 `http://localhost:5173/`
 2. Copy `.env.example` to `.env` and set `VITE_OIDC_ISSUER` and
 	 `VITE_OIDC_CLIENT_ID`. The local API URL is read from `dev-ports.json`.
 3. Install and configure the API:
@@ -70,7 +70,7 @@ the Pocket ID redirect URI and the matching `OIDC_REDIRECT_URI` and
 	 ```
 
 	 Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`,
-	 `OIDC_REDIRECT_URI=http://localhost:5173/timeplan/`, and
+	 `OIDC_REDIRECT_URI=http://localhost:5173/`, and
 	 `CORS_ORIGIN=http://localhost:5173` in `server/.env`. The client ID must
 	 match the frontend value. Never put the client secret in a `VITE_` variable.
 4. Start both development servers from the repository root with one command:
@@ -79,13 +79,13 @@ the Pocket ID redirect URI and the matching `OIDC_REDIRECT_URI` and
 	 npm run dev:all
 	 ```
 
-	 Open `http://localhost:5173/timeplan/`.
+	 Open `http://localhost:5173/`.
 	 This runs Vite and the API as two child processes; stopping the command stops
 	 both. `npm run dev` and `npm run dev:api` remain available separately.
 
 ### Production Deployment
 
-- Register `https://<frontend-domain>/timeplan/` as the Pocket ID redirect URI.
+- Register `https://<frontend-domain>/` as the Pocket ID redirect URI.
 	Set the exact same value in the API's `OIDC_REDIRECT_URI`.
 - Set frontend build variables `VITE_OIDC_ISSUER` and `VITE_OIDC_CLIENT_ID`.
 	Set `VITE_API_BASE_URL=` (empty) so the browser calls `/api` on the same
@@ -98,10 +98,10 @@ the Pocket ID redirect URI and the matching `OIDC_REDIRECT_URI` and
 - Build the frontend with `npm run build`, then install server dependencies with
 	`cd server && npm ci --omit=dev`. Start the single production Node process
 	with `pm2 start ecosystem.config.cjs --cwd server` (or run that command from
-	`server/`). The Express process serves both `dist/` at `/timeplan/` and the
+	`server/`). The Express process serves both `dist/` at `/` and the
 	API at `/api`.
 - Put that one process behind an HTTPS reverse proxy, forwarding both `/api/`
-	and `/timeplan/` to `127.0.0.1:4001`. The Node server intentionally does not
+	and `/` to `127.0.0.1:4001`. The Node server intentionally does not
 	bind to a public interface. The PM2 config uses one forked instance.
 - Back up the SQLite database regularly and keep its containing directory
 	persistent across deployments.

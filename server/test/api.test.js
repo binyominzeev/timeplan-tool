@@ -112,11 +112,7 @@ test('requires authentication and validates state documents', async () => {
 
 test('serves the built app from the same process as the API', async () => {
   await withApi(async (baseUrl) => {
-    const root = await fetch(baseUrl, { redirect: 'manual' });
-    assert.equal(root.status, 308);
-    assert.equal(root.headers.get('location'), '/timeplan/');
-
-    const page = await fetch(`${baseUrl}/timeplan/`);
+    const page = await fetch(`${baseUrl}/`);
     assert.equal(page.status, 200);
     assert.match(await page.text(), /TimePlan test/);
   });
