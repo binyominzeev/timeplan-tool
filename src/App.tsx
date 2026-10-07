@@ -130,6 +130,9 @@ function App() {
           markLocalMigrationComplete();
           setState(normalizeAppState(stored.document.state));
           setFavorites(normalizeFavorites(stored.document.favorites));
+          const storedUi = stored.document.ui;
+          if (typeof storedUi?.showProgressPanel === 'boolean') setShowProgressPanel(storedUi.showProgressPanel);
+          if (typeof storedUi?.showActivities === 'boolean') setShowActivities(storedUi.showActivities);
         } else {
           const initialState = shouldMigrateLocalData ? localState : normalizeAppState({});
           const initialFavorites = shouldMigrateLocalData ? localFavorites : normalizeFavorites([]);
@@ -137,7 +140,11 @@ function App() {
           setFavorites(initialFavorites);
           const saved = await requestForSession(sessionKey, '/state', {
             method: 'PUT',
-            body: JSON.stringify({ state: initialState, favorites: initialFavorites }),
+            body: JSON.stringify({
+              state: initialState,
+              favorites: initialFavorites,
+              ui: loadUiVisibility(),
+            }),
           });
           if (!active) return;
           if (saved === null) throw new Error('Could not initialize your cloud planner.');
@@ -166,7 +173,7 @@ function App() {
   useEffect(() => {
     if (!cloudReady || authStatus !== 'authenticated') return;
     const sessionKey = authSessionKey;
-    const document = { state, favorites };
+    const document = { state, favorites, ui: { showProgressPanel, showActivities } };
 
     const timeoutId = window.setTimeout(() => {
       setCloudSyncState({ sessionKey, status: 'saving' });
@@ -190,7 +197,7 @@ function App() {
     }, 600);
 
     return () => window.clearTimeout(timeoutId);
-  }, [state, favorites, cloudReady, authStatus, authSessionKey, requestForSession]);
+  }, [state, favorites, showProgressPanel, showActivities, cloudReady, authStatus, authSessionKey, requestForSession]);
 
   useEffect(() => {
     const refreshDailySchedule = () => {

@@ -20,6 +20,13 @@ function isPlannerDocument(value) {
     !Array.isArray(state.days) ||
     !state.dayLabels || typeof state.dayLabels !== 'object' || Array.isArray(state.dayLabels)
   ) return false;
+  if (document.ui !== undefined) {
+    const ui = document.ui;
+    if (!ui || typeof ui !== 'object' || Array.isArray(ui)) return false;
+    for (const key of ['showProgressPanel', 'showActivities']) {
+      if (ui[key] !== undefined && typeof ui[key] !== 'boolean') return false;
+    }
+  }
   if (!Array.isArray(document.favorites) || document.favorites.length !== 4) return false;
   return document.favorites.every((favorite) =>
     favorite === null || (

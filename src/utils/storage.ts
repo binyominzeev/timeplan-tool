@@ -285,6 +285,7 @@ export interface Favorite {
 export interface PlannerCloudDocument {
   state: AppState;
   favorites: Array<Favorite | null>;
+  ui?: Partial<UiVisibilityState>;
 }
 
 export interface PlannerCloudResponse {
