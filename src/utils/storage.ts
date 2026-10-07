@@ -282,36 +282,70 @@ export interface Favorite {
   data: AppState;
 }
 
+export interface PlannerCloudDocument {
+  state: AppState;
+  favorites: Array<Favorite | null>;
+}
+
+export interface PlannerCloudResponse {
+  document: PlannerCloudDocument;
+  updatedAt: string;
+}
+
 const FAVORITES_KEY = 'timeplan_favorites';
 const FAVORITES_COUNT = 4;
+const RECOVERY_KEY = 'timeplan_recovery';
+const LOCAL_MIGRATION_KEY = 'timeplan_local_migration_complete';
+
+export function hasCompletedLocalMigration(): boolean {
+  try {
+    return localStorage.getItem(LOCAL_MIGRATION_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function markLocalMigrationComplete(): void {
+  try {
+    localStorage.setItem(LOCAL_MIGRATION_KEY, 'true');
+  } catch {
+    // Migration state is best-effort when browser storage is unavailable.
+  }
+}
+
+export function normalizeFavorites(raw: unknown): Array<Favorite | null> {
+  if (!Array.isArray(raw)) return Array<null>(FAVORITES_COUNT).fill(null);
+
+  return Array.from({ length: FAVORITES_COUNT }, (_, index) => {
+    const item = raw[index];
+    if (
+      !item || typeof item !== 'object' ||
+      !('name' in item) || !('data' in item) ||
+      typeof item.name !== 'string' || !item.data || typeof item.data !== 'object'
+    ) return null;
+    return { name: item.name, data: normalizeAppState(item.data) };
+  });
+}
+
+export function saveRecoverySnapshot(
+  state: AppState,
+  favorites: Array<Favorite | null>,
+): void {
+  try {
+    const previous = JSON.parse(localStorage.getItem(RECOVERY_KEY) || '[]') as unknown;
+    const snapshots = Array.isArray(previous) ? previous : [];
+    snapshots.push({ savedAt: new Date().toISOString(), state, favorites });
+    localStorage.setItem(RECOVERY_KEY, JSON.stringify(snapshots.slice(-5)));
+  } catch {
+    // Recovery is best-effort when browser storage is unavailable.
+  }
+}
 
 export function loadFavorites(): Array<Favorite | null> {
   try {
     const raw = localStorage.getItem(FAVORITES_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as unknown[];
-      if (Array.isArray(parsed)) {
-        const result: Array<Favorite | null> = [];
-        for (let i = 0; i < FAVORITES_COUNT; i++) {
-          const item = parsed[i];
-          if (
-            item &&
-            typeof item === 'object' &&
-            'name' in item &&
-            'data' in item &&
-            typeof (item as { name: unknown }).name === 'string'
-          ) {
-            const fav = item as { name: string; data: unknown };
-            result.push({
-              name: fav.name,
-              data: normalizeAppState(fav.data),
-            });
-          } else {
-            result.push(null);
-          }
-        }
-        return result;
-      }
+      return normalizeFavorites(JSON.parse(raw) as unknown);
     }
   } catch {
     // ignore corrupt data

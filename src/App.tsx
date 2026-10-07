@@ -2,17 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Draggable } from '@fullcalendar/interaction';
 
 import type { Activity, AppState, DayKey } from './types';
+import { useAuth } from './auth/useAuth';
 import { parseCSV } from './utils/csvParser';
 import {
   loadFavorites,
   loadState,
   loadUiVisibility,
+  hasCompletedLocalMigration,
+  markLocalMigrationComplete,
+  normalizeFavorites,
   normalizeAppState,
-  saveFavorites,
-  saveState,
+  saveRecoverySnapshot,
   saveUiVisibility,
 } from './utils/storage';
-import type { Favorite } from './utils/storage';
+import type { Favorite, PlannerCloudResponse } from './utils/storage';
 
 import { Backlog } from './components/Backlog';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
@@ -33,6 +36,15 @@ function isTextInputTarget(target: EventTarget | null): boolean {
 }
 
 function App() {
+  const {
+    status: authStatus,
+    userName,
+    sessionKey: authSessionKey,
+    error: authError,
+    login,
+    logout,
+    requestForSession,
+  } = useAuth();
   const initialUiVisibility = loadUiVisibility();
   const [state, setState] = useState<AppState>(loadState);
   const [viewMode, setViewMode] = useState<PlannerViewMode>('weekly');
@@ -43,6 +55,19 @@ function App() {
   const [showActivities, setShowActivities] = useState(initialUiVisibility.showActivities);
   const [menuOpen, setMenuOpen] = useState(false);
   const [favorites, setFavorites] = useState<Array<Favorite | null>>(loadFavorites);
+  const [hydratedSessionKey, setHydratedSessionKey] = useState<string | null>(null);
+  const [cloudErrorState, setCloudErrorState] = useState<{ sessionKey: string; error: string } | null>(null);
+  const [cloudSyncState, setCloudSyncState] = useState<{
+    sessionKey: string;
+    status: 'loading' | 'saving' | 'saved' | 'error';
+  } | null>(null);
+  const [hydrateAttempt, setHydrateAttempt] = useState(0);
+  const cloudQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const cloudReady = authStatus === 'authenticated' && hydratedSessionKey === authSessionKey;
+  const cloudError = cloudErrorState?.sessionKey === authSessionKey ? cloudErrorState.error : null;
+  const syncStatus = cloudSyncState?.sessionKey === authSessionKey
+    ? cloudSyncState.status
+    : authStatus === 'authenticated' ? 'loading' : 'idle';
   const [snapMinutes, setSnapMinutes] = useState<SnapMinutes>(15);
   const [zoomMinutes, setZoomMinutes] = useState<number>(ZOOM_CONFIG.defaultMinutes);
   const [snapToast, setSnapToast] = useState<string | null>(null);
@@ -87,8 +112,85 @@ function App() {
   }, [clampZoom]);
 
   useEffect(() => {
-    saveState(state);
-  }, [state]);
+    if (authStatus !== 'authenticated') return;
+
+    let active = true;
+    const sessionKey = authSessionKey;
+    const localState = loadState();
+    const localFavorites = loadFavorites();
+    const shouldMigrateLocalData = !hasCompletedLocalMigration();
+
+    void (async () => {
+      try {
+        const stored = await requestForSession<PlannerCloudResponse>(sessionKey, '/state');
+        if (!active) return;
+
+        if (stored?.document) {
+          if (shouldMigrateLocalData) saveRecoverySnapshot(localState, localFavorites);
+          markLocalMigrationComplete();
+          setState(normalizeAppState(stored.document.state));
+          setFavorites(normalizeFavorites(stored.document.favorites));
+        } else {
+          const initialState = shouldMigrateLocalData ? localState : normalizeAppState({});
+          const initialFavorites = shouldMigrateLocalData ? localFavorites : normalizeFavorites([]);
+          setState(initialState);
+          setFavorites(initialFavorites);
+          const saved = await requestForSession(sessionKey, '/state', {
+            method: 'PUT',
+            body: JSON.stringify({ state: initialState, favorites: initialFavorites }),
+          });
+          if (!active) return;
+          if (saved === null) throw new Error('Could not initialize your cloud planner.');
+          markLocalMigrationComplete();
+        }
+
+        if (active) {
+          setHydratedSessionKey(sessionKey);
+          setCloudSyncState({ sessionKey, status: 'saved' });
+        }
+      } catch (error) {
+        if (!active) return;
+        setCloudErrorState({
+          sessionKey,
+          error: error instanceof Error ? error.message : 'Could not load your planner data.',
+        });
+        setCloudSyncState({ sessionKey, status: 'error' });
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [authStatus, authSessionKey, requestForSession, hydrateAttempt]);
+
+  useEffect(() => {
+    if (!cloudReady || authStatus !== 'authenticated') return;
+    const sessionKey = authSessionKey;
+    const document = { state, favorites };
+
+    const timeoutId = window.setTimeout(() => {
+      setCloudSyncState({ sessionKey, status: 'saving' });
+      setCloudErrorState(null);
+      cloudQueueRef.current = cloudQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const saved = await requestForSession(sessionKey, '/state', {
+            method: 'PUT',
+            body: JSON.stringify(document),
+          });
+          if (saved !== null) setCloudSyncState({ sessionKey, status: 'saved' });
+        })
+        .catch((error: unknown) => {
+          setCloudErrorState({
+            sessionKey,
+            error: error instanceof Error ? error.message : 'Could not save your planner data.',
+          });
+          setCloudSyncState({ sessionKey, status: 'error' });
+        });
+    }, 600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [state, favorites, cloudReady, authStatus, authSessionKey, requestForSession]);
 
   useEffect(() => {
     const refreshDailySchedule = () => {
@@ -104,10 +206,6 @@ function App() {
       window.removeEventListener('focus', refreshDailySchedule);
     };
   }, []);
-
-  useEffect(() => {
-    saveFavorites(favorites);
-  }, [favorites]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -439,6 +537,65 @@ function App() {
     [favorites],
   );
 
+  if (authStatus !== 'authenticated' || !cloudReady) {
+    const loading = authStatus === 'initializing'
+      || (authStatus === 'authenticated' && syncStatus === 'loading');
+    const message = cloudError || authError;
+
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-100 px-4">
+        <section className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <h1 className="text-xl font-bold text-gray-800">TimePlan</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            {loading
+              ? 'Loading your planner...'
+              : authStatus === 'authenticated'
+                ? 'Your planner could not be synchronized.'
+                : 'Sign in to access your planner.'}
+          </p>
+          {message && <p role="alert" className="mt-3 break-words text-sm text-red-600">{message}</p>}
+          {authStatus === 'authenticated' && !loading ? (
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCloudErrorState(null);
+                  setHydrateAttempt((attempt) => attempt + 1);
+                }}
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : authStatus === 'anonymous' || authStatus === 'error' ? (
+            <button
+              type="button"
+              onClick={() => {
+                setCloudErrorState(null);
+                void login().catch((error: unknown) => {
+                  setCloudErrorState({
+                    sessionKey: authSessionKey,
+                    error: error instanceof Error ? error.message : 'Could not start sign-in.',
+                  });
+                });
+              }}
+              className="mt-5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Sign in with Pocket ID
+            </button>
+          ) : null}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="printable-root flex flex-col h-screen bg-gray-100 overflow-hidden print:h-auto print:overflow-visible print:bg-white">
       <header className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-gray-200 shrink-0 print:hidden">
@@ -446,6 +603,21 @@ function App() {
         <span className="hidden sm:inline text-gray-300">|</span>
         <span className="hidden sm:inline text-sm text-gray-500">Weekly time planner</span>
         <div className="ml-auto flex items-center gap-2">
+          <span
+            role="status"
+            title={cloudError || undefined}
+            className={`hidden md:inline text-xs ${syncStatus === 'error' ? 'text-red-600' : 'text-gray-500'}`}
+          >
+            {syncStatus === 'saving' ? 'Saving…' : syncStatus === 'error' ? 'Save failed' : 'Saved'}
+          </span>
+          <span className="hidden lg:inline max-w-32 truncate text-xs text-gray-500">{userName}</span>
+          <button
+            type="button"
+            onClick={logout}
+            className="text-xs rounded-md border border-gray-200 px-2.5 py-1.5 text-gray-700 hover:bg-gray-50"
+          >
+            Sign out
+          </button>
           {/* Zoom controls for calendar slot duration */}
           <div className="flex items-center gap-1 sm:gap-2">
             <button
