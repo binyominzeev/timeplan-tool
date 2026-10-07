@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: devPorts.frontend,
       strictPort: true,
+      allowedHosts: ['timeplan.binjomin.hu'],
     },
     define: {
       'import.meta.env.VITE_API_BASE_URL': JSON.stringify(apiBaseUrl),
