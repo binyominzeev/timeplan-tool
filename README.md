@@ -49,11 +49,18 @@ preferences stay in the browser. The API is a separate Node.js 20+ service.
 
 ### Local Development
 
+The local development ports are configured together in
+[`dev-ports.json`](./dev-ports.json): `frontend` defaults to `5173` and `api`
+to `4001`. Change the relevant value there; Vite and the API use these values
+when started in development mode, and the frontend's local API URL is derived
+from the API port automatically. If you change the frontend port, also update
+the Pocket ID redirect URI and the matching `OIDC_REDIRECT_URI` and
+`CORS_ORIGIN` values in `server/.env`.
+
 1. Configure the Pocket ID client to allow this redirect URI exactly:
 	 `http://localhost:5173/timeplan/`
 2. Copy `.env.example` to `.env` and set `VITE_OIDC_ISSUER` and
-	 `VITE_OIDC_CLIENT_ID`. Keep `VITE_API_BASE_URL` at
-	 `http://localhost:4001` for local development.
+	 `VITE_OIDC_CLIENT_ID`. The local API URL is read from `dev-ports.json`.
 3. Install and configure the API:
 
 	 ```bash
@@ -83,9 +90,11 @@ preferences stay in the browser. The API is a separate Node.js 20+ service.
 - Set frontend build variables `VITE_OIDC_ISSUER` and `VITE_OIDC_CLIENT_ID`.
 	Set `VITE_API_BASE_URL=` (empty) so the browser calls `/api` on the same
 	origin. These values are public; the OIDC client secret is not.
-- Set API `CORS_ORIGIN=https://<frontend-domain>` without a path, and provide
-	`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and a persistent
-	`DATABASE_PATH` in the server environment.
+- Set API `PORT` if the production API should use a non-default port (otherwise
+	the API port in `dev-ports.json` is used), `CORS_ORIGIN=https://<frontend-domain>`
+	without a path, and provide `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
+	`OIDC_CLIENT_SECRET`, and a persistent `DATABASE_PATH` in the server
+	environment.
 - Build the frontend with `npm run build`, then install server dependencies with
 	`cd server && npm ci --omit=dev`. Start the single production Node process
 	with `pm2 start ecosystem.config.cjs --cwd server` (or run that command from

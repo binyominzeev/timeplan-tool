@@ -2,11 +2,14 @@ import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createDatabase } from './db.js';
 import { createRoutes } from './routes.js';
 
+const require = createRequire(import.meta.url);
+const devPorts = require('../../dev-ports.json');
 const defaultWebDistPath = fileURLToPath(new URL('../../dist/', import.meta.url));
 
 export function createApp({ database, authenticate, webDistPath = defaultWebDistPath } = {}) {
@@ -49,7 +52,9 @@ const isDirectExecution = process.argv[1]
   && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isDirectExecution) {
-  const port = Number(process.env.PORT || 4001);
+  const port = process.env.NODE_ENV === 'production'
+    ? Number(process.env.PORT || devPorts.api)
+    : devPorts.api;
   const database = createDatabase(process.env.DATABASE_PATH || './data/timeplan.db');
   createApp({ database }).listen(port, '127.0.0.1', () => {
     console.log(`API listening on 127.0.0.1:${port}`);
