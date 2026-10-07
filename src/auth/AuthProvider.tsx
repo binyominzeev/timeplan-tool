@@ -205,7 +205,12 @@ async function exchangeCallback(): Promise<void> {
   if (!code) return;
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
   const expectedState = sessionStorage.getItem(STATE_KEY);
-  if (!verifier || !expectedState || params.get('state') !== expectedState) {
+  if (!verifier || !expectedState) {
+    // Stale callback URL (e.g. saved as a home-screen shortcut): no login is in progress.
+    window.history.replaceState(null, '', basePath);
+    return;
+  }
+  if (params.get('state') !== expectedState) {
     throw new Error('Invalid OIDC state');
   }
 

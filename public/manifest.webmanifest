@@ -1,0 +1,8 @@
+{
+  "name": "Timeplan Tool",
+  "short_name": "Timeplan",
+  "start_url": "./",
+  "scope": "./",
+  "display": "browser",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
