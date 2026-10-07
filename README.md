@@ -97,8 +97,8 @@ the Pocket ID redirect URI and the matching `OIDC_REDIRECT_URI` and
 	environment.
 - Build the frontend with `npm run build`, then install server dependencies with
 	`cd server && npm ci --omit=dev`. Start the single production Node process
-	with `pm2 start ecosystem.config.cjs --cwd server` (or run that command from
-	`server/`). The Express process serves both `dist/` at `/` and the
+	with `pm2 start ecosystem.config.cjs` from the `server/` directory (the
+	config sets its own working directory, so no `--cwd` is needed). The Express process serves both `dist/` at `/` and the
 	API at `/api`.
 - Put that one process behind an HTTPS reverse proxy, forwarding both `/api/`
 	and `/` to `127.0.0.1:4001`. The Node server intentionally does not

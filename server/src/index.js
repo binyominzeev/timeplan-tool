@@ -43,8 +43,9 @@ export function createApp({ database, authenticate, webDistPath = defaultWebDist
   return app;
 }
 
-const isDirectExecution = process.argv[1]
-  && import.meta.url === pathToFileURL(process.argv[1]).href;
+// PM2 launches the script through its own wrapper, so argv[1] is not this file.
+const isDirectExecution = process.env.pm_id !== undefined
+  || (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href);
 
 if (isDirectExecution) {
   const port = process.env.NODE_ENV === 'production'
