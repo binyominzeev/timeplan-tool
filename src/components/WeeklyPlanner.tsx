@@ -179,7 +179,7 @@ export function WeeklyPlanner({
       const endTime =
         (entry.endTime ? normalizeClock(entry.endTime) : undefined) ??
         `${String(Math.floor((parseTimeToMinutes(startTime) + durationMinutes) / 60) % 24).padStart(2, '0')}:${String((parseTimeToMinutes(startTime) + durationMinutes) % 60).padStart(2, '0')}`;
-      const isToday = entry.day === todayDay;
+      const isToday = viewMode === 'daily' || entry.day === todayDay;
       const isCompleted = completions.some((completion) => completion.entryId === entry.id && completion.date === todayDate);
 
       return {
@@ -301,8 +301,8 @@ export function WeeklyPlanner({
             isCompleted
               ? 'border-emerald-600 bg-emerald-600 text-white'
               : canComplete
-                ? 'border-gray-400 bg-white/90 text-transparent hover:border-emerald-600 hover:text-emerald-600'
-                : 'cursor-not-allowed border-gray-300 bg-white/70 text-transparent opacity-60'
+                ? 'border-gray-400 bg-white/90 text-gray-400 hover:border-emerald-600 hover:text-emerald-600'
+                : 'cursor-not-allowed border-gray-300 bg-white/70 text-gray-300 opacity-80'
           }`}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
