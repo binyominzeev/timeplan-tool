@@ -30,12 +30,24 @@ export interface ScheduledEntry {
   endTime?: string;
 }
 
+export interface CompletionRecord {
+  entryId: string;
+  activityId: string;
+  activityName: string;
+  category: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  completedAt: string;
+}
+
 export interface AppState {
   activities: Activity[];
   schedule: ScheduledEntry[];
   dailySchedule: ScheduledEntry[];
   dailyScheduleDate: string;
   starredActivityIds: string[];
+  completions: CompletionRecord[];
   days: DayKey[];
   dayLabels: Record<DayKey, string>;
 }

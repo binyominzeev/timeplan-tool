@@ -9,13 +9,16 @@ import type {
   EventInput,
   EventMountArg,
 } from '@fullcalendar/core';
-import type { Activity, DayKey, ScheduledEntry } from '../types';
+import type { Activity, CompletionRecord, DayKey, ScheduledEntry } from '../types';
 import { getCategoryColorSet } from '../utils/categoryColors';
 import { minutesToHoursString, parseTimeToMinutes } from '../utils/time';
 
 interface Props {
   activities: Activity[];
   schedule: ScheduledEntry[];
+  completions: CompletionRecord[];
+  now: Date;
+  onToggleCompletion: (completion: Omit<CompletionRecord, 'completedAt'>) => void;
   viewMode: 'weekly' | 'daily';
   onChangeViewMode: (viewMode: 'weekly' | 'daily') => void;
   days: DayKey[];
@@ -90,6 +93,9 @@ function dayFromDate(date: Date, dayColumns: { day: DayKey; label: string; date:
 export function WeeklyPlanner({
   activities,
   schedule,
+  completions,
+  now,
+  onToggleCompletion,
   viewMode,
   onChangeViewMode,
   days,
@@ -158,6 +164,10 @@ export function WeeklyPlanner({
     label: dayLabels[day] ?? day,
     date: viewMode === 'daily' ? dateKeyFromDate(new Date()) : getDateForIndex(index),
   }));
+  const todayDate = dateKeyFromDate(now);
+  const todayWeekIndex = (now.getDay() + 6) % 7;
+  const todayDay = viewMode === 'daily' ? dayColumns[0]?.day : dayColumns[todayWeekIndex]?.day;
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   const events: EventInput[] = schedule
     .map((entry) => {
@@ -169,6 +179,8 @@ export function WeeklyPlanner({
       const endTime =
         (entry.endTime ? normalizeClock(entry.endTime) : undefined) ??
         `${String(Math.floor((parseTimeToMinutes(startTime) + durationMinutes) / 60) % 24).padStart(2, '0')}:${String((parseTimeToMinutes(startTime) + durationMinutes) % 60).padStart(2, '0')}`;
+      const isToday = entry.day === todayDay;
+      const isCompleted = completions.some((completion) => completion.entryId === entry.id && completion.date === todayDate);
 
       return {
         id: entry.id,
@@ -179,6 +191,8 @@ export function WeeklyPlanner({
           day: entry.day,
           activityId: entry.activityId,
           category: activity?.category ?? 'Legacy',
+          canComplete: isToday && parseTimeToMinutes(startTime) <= currentMinutes,
+          isCompleted,
         },
       } satisfies EventInput;
     })
@@ -270,11 +284,49 @@ export function WeeklyPlanner({
     const category = String(arg.event.extendedProps.category ?? '');
     const colors = getCategoryColorSet(category);
     const timeRange = formatEventRange(arg.event.start, arg.event.end);
+    const canComplete = Boolean(arg.event.extendedProps.canComplete);
+    const isCompleted = Boolean(arg.event.extendedProps.isCompleted);
     return (
-      <div className={`h-full rounded-md border px-1.5 py-1 text-[11px] leading-tight shadow-sm ${colors.event}`}>
+      <div className={`relative h-full rounded-md border px-1.5 py-1 pr-6 text-[11px] leading-tight shadow-sm ${colors.event}`}>
         <div className="font-semibold truncate">{arg.event.title}</div>
         {timeRange && <div className="truncate text-[10px] font-medium" style={{ color: colors.eventStyle.accent }}>{timeRange}</div>}
         {category && <div className="truncate text-[10px] opacity-85 uppercase tracking-wide">{category}</div>}
+        <button
+          type="button"
+          aria-label={isCompleted ? `${arg.event.title} teljesítésének visszavonása` : `${arg.event.title} készre jelölése`}
+          aria-pressed={isCompleted}
+          aria-disabled={!canComplete}
+          title={isCompleted ? 'Teljesítés visszavonása' : canComplete ? 'Készre jelölés' : 'A kezdési időpont előtt nem jelölhető késznek'}
+          className={`absolute right-1 top-1 z-10 flex h-4 w-4 items-center justify-center rounded border transition-colors print:hidden ${
+            isCompleted
+              ? 'border-emerald-600 bg-emerald-600 text-white'
+              : canComplete
+                ? 'border-gray-400 bg-white/90 text-transparent hover:border-emerald-600 hover:text-emerald-600'
+                : 'cursor-not-allowed border-gray-300 bg-white/70 text-transparent opacity-60'
+          }`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!canComplete) return;
+            const start = arg.event.start;
+            const end = arg.event.end;
+            if (!start || !end) return;
+            onToggleCompletion({
+              entryId: arg.event.id,
+              activityId: String(arg.event.extendedProps.activityId ?? ''),
+              activityName: arg.event.title,
+              category,
+              date: todayDate,
+              startTime: timeFromDate(start),
+              endTime: timeFromDate(end),
+            });
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m5 12 4 4L19 6" />
+          </svg>
+        </button>
       </div>
     );
   };

@@ -107,6 +107,16 @@ test('requires authentication and validates state documents', async () => {
       body: JSON.stringify({ state: {} }),
     });
     assert.equal(invalid.status, 400);
+
+    const invalidCompletion = await fetch(`${baseUrl}/api/state`, {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer alice', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...emptyDocument,
+        state: { ...emptyDocument.state, completions: [{ entryId: 'entry-1' }] },
+      }),
+    });
+    assert.equal(invalidCompletion.status, 400);
   });
 });
 
@@ -132,6 +142,30 @@ test('stores planner data separately for each authenticated subject', async () =
       headers: { Authorization: 'Bearer alice' },
     });
     assert.deepEqual((await alice.json()).document, emptyDocument);
+
+    const completedDocument = {
+      ...emptyDocument,
+      state: {
+        ...emptyDocument.state,
+        completions: [{
+          entryId: 'entry-1',
+          activityId: 'activity-1',
+          activityName: 'Review notes',
+          category: 'Work',
+          date: '2026-10-08',
+          startTime: '09:00',
+          endTime: '09:30',
+          completedAt: '2026-10-08T09:31:00.000Z',
+        }],
+      },
+    };
+    const completionSave = await fetch(`${baseUrl}/api/state`, {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer alice', 'Content-Type': 'application/json' },
+      body: JSON.stringify(completedDocument),
+    });
+    assert.equal(completionSave.status, 200);
+    assert.deepEqual((await completionSave.json()).document, completedDocument);
 
     const bob = await fetch(`${baseUrl}/api/state`, {
       headers: { Authorization: 'Bearer bob' },

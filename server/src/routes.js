@@ -20,6 +20,25 @@ function isPlannerDocument(value) {
     !Array.isArray(state.days) ||
     !state.dayLabels || typeof state.dayLabels !== 'object' || Array.isArray(state.dayLabels)
   ) return false;
+  if (state.completions !== undefined && (
+    !Array.isArray(state.completions) ||
+    !state.completions.every((completion) => {
+      if (!completion || typeof completion !== 'object' || Array.isArray(completion)) return false;
+      const date = completion.date;
+      const parsedDate = typeof date === 'string' ? new Date(`${date}T00:00:00Z`) : null;
+      return (
+        typeof completion.entryId === 'string' && completion.entryId.length > 0 &&
+        typeof completion.activityId === 'string' && completion.activityId.length > 0 &&
+        typeof completion.activityName === 'string' && completion.activityName.length > 0 &&
+        typeof completion.category === 'string' &&
+        typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+        parsedDate && Number.isFinite(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === date &&
+        typeof completion.startTime === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(completion.startTime) &&
+        typeof completion.endTime === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(completion.endTime) &&
+        typeof completion.completedAt === 'string' && Number.isFinite(Date.parse(completion.completedAt))
+      );
+    })
+  )) return false;
   if (document.ui !== undefined) {
     const ui = document.ui;
     if (!ui || typeof ui !== 'object' || Array.isArray(ui)) return false;

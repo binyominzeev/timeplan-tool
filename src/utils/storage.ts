@@ -59,6 +59,46 @@ function getLocalDateKey(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function normalizeCompletions(raw: unknown): AppState['completions'] {
+  if (!Array.isArray(raw)) return [];
+
+  const seen = new Set<string>();
+  return raw
+    .filter((record): record is Record<string, unknown> => Boolean(record) && typeof record === 'object')
+    .flatMap((record) => {
+      const entryId = typeof record.entryId === 'string' ? record.entryId.trim() : '';
+      const activityId = typeof record.activityId === 'string' ? record.activityId.trim() : '';
+      const activityName = typeof record.activityName === 'string' ? record.activityName.trim() : '';
+      const category = typeof record.category === 'string' ? record.category : '';
+      const date = typeof record.date === 'string' ? record.date : '';
+      const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00Z`) : null;
+      const startTime = typeof record.startTime === 'string' ? normalizeTimeString(record.startTime, '') : '';
+      const endTime = typeof record.endTime === 'string' ? normalizeTimeString(record.endTime, '') : '';
+      const completedAt = typeof record.completedAt === 'string' ? new Date(record.completedAt) : null;
+
+      if (
+        !entryId || !activityId || !activityName || !startTime || !endTime ||
+        !parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date ||
+        !completedAt || !Number.isFinite(completedAt.getTime())
+      ) return [];
+
+      const key = `${date}:${entryId}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+
+      return [{
+        entryId,
+        activityId,
+        activityName,
+        category,
+        date,
+        startTime,
+        endTime,
+        completedAt: completedAt.toISOString(),
+      }];
+    });
+}
+
 function normalizeSchedule(raw: unknown, days: string[]): {
   schedule: AppState['schedule'];
   legacyNames: Record<string, string>;
@@ -201,6 +241,7 @@ export function normalizeAppState(raw: unknown): AppState {
   const mergedActivityIds = new Set(mergedActivities.map((activity) => activity.id));
   const starredActivityIds = toUniqueStringArray(parsed.starredActivityIds)
     .filter((activityId) => mergedActivityIds.has(activityId));
+  const completions = normalizeCompletions(parsed.completions);
 
   return {
     activities: mergedActivities,
@@ -210,6 +251,7 @@ export function normalizeAppState(raw: unknown): AppState {
       : [],
     dailyScheduleDate: today,
     starredActivityIds,
+    completions,
     days: effectiveDays,
     dayLabels: normalizeDayLabels(parsed.dayLabels, effectiveDays),
   };
@@ -230,6 +272,7 @@ export function loadState(): AppState {
     dailySchedule: [],
     dailyScheduleDate: getLocalDateKey(),
     starredActivityIds: [],
+    completions: [],
     days: DEFAULT_DAYS,
     dayLabels: DEFAULT_DAY_LABELS,
   };

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Draggable } from '@fullcalendar/interaction';
 
-import type { Activity, AppState, DayKey } from './types';
+import type { Activity, AppState, CompletionRecord, DayKey } from './types';
 import { useAuth } from './auth/useAuth';
 import { parseCSV } from './utils/csvParser';
 import {
@@ -21,6 +21,7 @@ import { Backlog } from './components/Backlog';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
 import { ProgressPanel } from './components/ProgressPanel';
 import { CSVImport } from './components/CSVImport';
+import { CompletionLogDialog } from './components/CompletionLogDialog';
 import { ZOOM_CONFIG } from './config/zoomConfig';
 
 type SnapMinutes = 5 | 15;
@@ -47,6 +48,7 @@ function App() {
   } = useAuth();
   const initialUiVisibility = loadUiVisibility();
   const [state, setState] = useState<AppState>(loadState);
+  const [now, setNow] = useState(() => new Date());
   const [viewMode, setViewMode] = useState<PlannerViewMode>('weekly');
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -54,6 +56,7 @@ function App() {
   const [showProgressPanel, setShowProgressPanel] = useState(initialUiVisibility.showProgressPanel);
   const [showActivities, setShowActivities] = useState(initialUiVisibility.showActivities);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showCompletionLog, setShowCompletionLog] = useState(false);
   const [favorites, setFavorites] = useState<Array<Favorite | null>>(loadFavorites);
   const [hydratedSessionKey, setHydratedSessionKey] = useState<string | null>(null);
   const [cloudErrorState, setCloudErrorState] = useState<{ sessionKey: string; error: string } | null>(null);
@@ -201,6 +204,7 @@ function App() {
 
   useEffect(() => {
     const refreshDailySchedule = () => {
+      setNow(new Date());
       const today = getLocalDateKey();
       setState((prev) => prev.dailyScheduleDate === today
         ? prev
@@ -516,6 +520,20 @@ function App() {
     }));
   }, []);
 
+  const toggleCompletion = useCallback((completion: Omit<CompletionRecord, 'completedAt'>) => {
+    setState((prev) => {
+      const alreadyCompleted = prev.completions.some(
+        (record) => record.entryId === completion.entryId && record.date === completion.date,
+      );
+      return {
+        ...prev,
+        completions: alreadyCompleted
+          ? prev.completions.filter((record) => record.entryId !== completion.entryId || record.date !== completion.date)
+          : [...prev.completions, { ...completion, completedAt: new Date().toISOString() }],
+      };
+    });
+  }, []);
+
   const handleSaveToFavorite = useCallback(
     (index: number) => {
       const current = favorites[index];
@@ -538,7 +556,7 @@ function App() {
     (index: number) => {
       const fav = favorites[index];
       if (!fav) return;
-      setState(normalizeAppState(fav.data));
+      setState((prev) => ({ ...normalizeAppState(fav.data), completions: prev.completions }));
       setMenuOpen(false);
     },
     [favorites],
@@ -737,6 +755,20 @@ function App() {
 
                 <hr className="my-1 border-gray-100" />
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCompletionLog(true);
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  <span>Elvégzett feladatok</span>
+                  <span className="text-xs tabular-nums text-gray-400">{state.completions.length}</span>
+                </button>
+
+                <hr className="my-1 border-gray-100" />
+
                 <p className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
                   Fájl
                 </p>
@@ -773,6 +805,7 @@ function App() {
                           dailySchedule: [],
                           dailyScheduleDate: getLocalDateKey(),
                           starredActivityIds: [],
+                          completions: [],
                         }));
                         setMenuOpen(false);
                       }}
@@ -841,6 +874,9 @@ function App() {
             schedule={activeScheduleKey === 'dailySchedule'
               ? (state.dailyScheduleDate === getLocalDateKey() ? state.dailySchedule : [])
               : state.schedule}
+            completions={state.completions}
+            now={now}
+            onToggleCompletion={toggleCompletion}
             viewMode={viewMode}
             onChangeViewMode={setViewMode}
             days={viewMode === 'daily' ? ['Today'] : state.days}
@@ -901,6 +937,12 @@ function App() {
       </div>
 
       <CSVImport onFile={handleCSVFile} />
+      {showCompletionLog && (
+        <CompletionLogDialog
+          completions={state.completions}
+          onClose={() => setShowCompletionLog(false)}
+        />
+      )}
       <input
         ref={jsonInputRef}
         type="file"
